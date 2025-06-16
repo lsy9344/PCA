@@ -1,0 +1,21 @@
+# AWS Lambda 환경 변수 설정 예시
+# 프로덕션 배포 시 이 값들을 Lambda 환경 변수로 설정하세요
+
+# 환경 설정 (development, test, production)
+ENVIRONMENT=production
+
+# 텔레그램 설정
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+
+# AWS CloudWatch Logs 설정
+LOG_RETENTION_DAYS=7
+
+# 매장별 로그인 정보 (실제 배포 시 AWS Secrets Manager 사용 권장)
+STORE_A_USERNAME=your_username
+STORE_A_PASSWORD=your_password
+STORE_A_URL=https://your-store-url.com
+
+# 기타 설정
+PLAYWRIGHT_TIMEOUT=30000
+PLAYWRIGHT_HEADLESS=true 

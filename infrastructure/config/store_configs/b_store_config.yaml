@@ -1,0 +1,50 @@
+# B매장 설정
+store:
+  id: "B"
+  name: "B매장"
+  website_url: "https://a15878.parkingweb.kr/login"
+  
+login:
+  username: "215"
+  password: "4318"
+
+# 쿠폰 타입 매핑
+coupons:
+  FREE_1HOUR:
+    name: "무료 1시간할인"
+    type: "free"
+    duration_minutes: 60
+    priority: 0
+  PAID_30MIN:
+    name: "유료 30분할인 (판매 : 300 )"
+    type: "paid"
+    duration_minutes: 30
+    priority: 1
+
+# 할인 정책
+discount_policy:
+  weekday:
+    target_hours: 3
+    max_coupons: 6
+  weekend:
+    target_hours: 2
+    max_coupons: 4
+
+# 웹 셀렉터 (B매장 전용)
+selectors:
+  # 로그인 관련
+  login:
+    username_input: "#username"
+    password_input: "#password"
+    login_button: ".login-btn"
+  
+  # 차량 검색
+  search:
+    car_number_input: "#vehicle_number"
+    search_button: ".search-btn"
+  
+  # 쿠폰 관련 (B매장은 다른 HTML 구조)
+  coupons:
+    discount_list: "ul.discount-list"
+    discount_items: "ul.discount-list li"
+    apply_button: ".apply-discount-btn" 

@@ -1,0 +1,35 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 쿠폰 계산 규칙 구조 설계
+
+## ✅ 전제
+
+1. 모든 매장은 **30분 또는 1시간 단위 쿠폰**만 존재한다.
+2. `base_discount.py` 은 **모든 쿠폰을 1시간짜리**라고 가정하여 동작한다.
+
+---
+
+## ✅ `base_discount.py` 동작 방식
+
+- 기본 규칙:  
+  - 평일 → 총 3시간 = FREE 1 + PAID 2  
+  - 주말 → 총 2시간 = FREE 1 + WEEKEND 1
+
+- 무료 쿠폰은 1개까지만 사용 가능하며, `total_history`에서 이미 사용된 경우 생략
+
+- `my_history`, `total_history`, `discount_types`를 기반으로 판단함
+
+---
+
+## ✅ B 매장 특수 규칙 (BDiscountRule)
+
+- `PAID_1HOUR` 쿠폰은 **30분짜리**이며 `PAID_30MIN` 으로 코드에 적용한다다.
+- 따라서 `base_discount.py`에서 반환된 무료쿠폰 개수는 그대로 사용하며,
+유료 쿠폰 개수만 **2배로 보정**해야 실제 시간과 일치한다.
+예)total_history 또는 my_history에서 무료1시간쿠폰이 이미 사용되어 졌다면 적용해야 할 유료쿠폰 * 2
+- **무료 쿠폰은 1시간이므로 보정 대상이 아니다.**
+- "WEEKEND_1HOUR" 쿠폰은 존재하지 않으므로 "PAID_1HOUR" 쿠폰을 사용한다.
+
