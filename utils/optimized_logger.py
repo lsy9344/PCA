@@ -23,6 +23,8 @@ class ErrorCode(Enum):
     FAIL_APPLY = "FAIL_APPLY"         # 쿠폰 적용 실패
     FAIL_NETWORK = "FAIL_NETWORK"     # 네트워크 오류
     FAIL_TIMEOUT = "FAIL_TIMEOUT"     # 타임아웃 오류
+    FAIL_SETUP = "FAIL_SETUP"         # 설정/초기화 실패
+    FAIL_TEST = "FAIL_TEST"           # 테스트 실행 실패
     SUCCESS = "SUCCESS"               # 성공
 
 

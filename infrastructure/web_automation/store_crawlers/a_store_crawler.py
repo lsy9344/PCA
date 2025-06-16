@@ -13,6 +13,7 @@ from shared.exceptions.automation_exceptions import (
 )
 from infrastructure.config.config_manager import ConfigManager
 from infrastructure.logging.structured_logger import StructuredLogger
+from utils.optimized_logger import OptimizedLogger, ErrorCode
 from utils.optimized_logger import get_optimized_logger
 
 
@@ -21,7 +22,7 @@ class AStoreCrawler(BaseCrawler):
     
     def __init__(self, store_config, playwright_config, structured_logger: StructuredLogger):
         super().__init__(store_config, playwright_config, structured_logger)
-        self.logger = get_optimized_logger(__name__)  # 최적화된 로거 사용
+        self.logger = OptimizedLogger("a_store_crawler", "A")  # 최적화된 로거 사용
     
     async def login(self) -> bool:
         """로그인 수행 (팝업 처리 포함)"""
@@ -32,22 +33,19 @@ class AStoreCrawler(BaseCrawler):
             await self.page.goto(self.store_config.website_url)
             
             # 개발 환경에서만 시작 로그 기록
-            if self.logger.should_log_info():
-                self.logger.log_info("[시작] A 매장 자동화 시작")
+            self.logger.log_info("[시작] A 매장 자동화 시작")
             
             # 1. 인트로 팝업 닫기 (실패해도 진행)
             try:
                 await self.page.click("#skip")
-                if self.logger.should_log_info():
-                    self.logger.log_info("[팝업처리] 인트로 팝업 닫기 성공")
+                self.logger.log_info("[팝업처리] 인트로 팝업 닫기 성공")
             except Exception:
                 pass  # 팝업 처리 실패는 로그 기록하지 않음
 
             # 2. 공지 팝업 닫기 (실패해도 진행)
             try:
                 await self.page.click("#popupCancel")
-                if self.logger.should_log_info():
-                    self.logger.log_info("[팝업처리] 공지 팝업 닫기 성공")
+                self.logger.log_info("[팝업처리] 공지 팝업 닫기 성공")
             except Exception:
                 pass  # 팝업 처리 실패는 로그 기록하지 않음
             
@@ -60,21 +58,18 @@ class AStoreCrawler(BaseCrawler):
             await self.page.wait_for_selector("#carNumber", timeout=30000)
             
             # 개발 환경에서만 성공 로그 기록
-            if self.logger.should_log_info():
-                self.logger.log_info("[로그인] 로그인 성공")
+            self.logger.log_info("[로그인] 로그인 성공")
             
             # 로그인 성공 후 팝업 처리 (실패해도 진행)
             try:
                 await self.page.click('#gohome')
-                if self.logger.should_log_info():
-                    self.logger.log_info("[로그인 후] 첫 번째 팝업 닫기 버튼 클릭 성공")
+                self.logger.log_info("[로그인 후] 첫 번째 팝업 닫기 버튼 클릭 성공")
             except Exception:
                 pass
                 
             try:
                 await self.page.click('#start')
-                if self.logger.should_log_info():
-                    self.logger.log_info("[로그인 후] 두 번째 팝업 닫기 버튼 클릭 성공")
+                self.logger.log_info("[로그인 후] 두 번째 팝업 닫기 버튼 클릭 성공")
             except Exception:
                 pass
                 
@@ -82,10 +77,10 @@ class AStoreCrawler(BaseCrawler):
             
         except TimeoutError:
             # 간소화된 에러 로그 + 텔레그램용 상세 정보 반환
-            details = self.logger.log_error("A", "로그인", "FAIL_AUTH", "차량번호 입력란이 나타나지 않음")
+            self.logger.log_error(ErrorCode.FAIL_AUTH, "로그인", "차량번호 입력란이 나타나지 않음")
             return False
         except Exception as e:
-            details = self.logger.log_error("A", "로그인", "FAIL_AUTH", str(e))
+            self.logger.log_error(ErrorCode.FAIL_AUTH, "로그인", str(e))
             return False
     
     async def search_vehicle(self, vehicle: Vehicle) -> bool:
@@ -95,8 +90,7 @@ class AStoreCrawler(BaseCrawler):
             await self.page.fill("#carNumber", vehicle.number)
             
             # 개발 환경에서만 입력 성공 로그 기록
-            if self.logger.should_log_info():
-                self.logger.log_info('[차량검색] 차량 번호 입력 성공')
+            self.logger.log_info('[차량검색] 차량 번호 입력 성공')
             
             # 검색 버튼 클릭 (여러 셀렉터 시도)
             try:
@@ -116,7 +110,7 @@ class AStoreCrawler(BaseCrawler):
                 if await park_name_elem.count() > 0:
                     park_name_text = await park_name_elem.inner_text()
                     if '검색된 차량이 없습니다.' in park_name_text:
-                        details = self.logger.log_error("A", "차량검색", "NO_VEHICLE", f"차량번호 {vehicle.number} 검색 결과 없음")
+                        self.logger.log_error(ErrorCode.NO_VEHICLE, "차량검색", f"차량번호 {vehicle.number} 검색 결과 없음")
                         return False
             except Exception:
                 pass

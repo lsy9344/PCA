@@ -15,10 +15,10 @@ from infrastructure.notifications.telegram_adapter import TelegramAdapter
 from core.domain.models.vehicle import Vehicle
 from core.domain.models.coupon import CouponApplication, CouponType
 from core.application.dto.automation_dto import ErrorContext
-from utils.optimized_logger import get_optimized_logger
+from utils.optimized_logger import get_optimized_logger, ErrorCode
 
 # 최적화된 로거 사용
-logger = get_optimized_logger(__name__)
+logger = get_optimized_logger(__name__, "A")
 
 class AStoreCouponTester:
     """A 매장 쿠폰 적용 테스터 (로깅 최적화 버전)"""
@@ -64,32 +64,29 @@ class AStoreCouponTester:
             self.telegram_adapter = TelegramAdapter(telegram_config, structured_logger)
             
             # 개발 환경에서만 설정 완료 로그 기록
-            if logger.should_log_info():
-                logger.log_info("[테스트 설정] A 매장 크롤러 및 텔레그램 어댑터 초기화 완료")
+            logger.log_info("[테스트 설정] A 매장 크롤러 및 텔레그램 어댑터 초기화 완료")
             
         except Exception as e:
-            logger.log_error("A", "테스트설정", "FAIL_SETUP", str(e))
+            logger.log_error(ErrorCode.FAIL_SETUP, "테스트설정", str(e))
             raise
     
     async def test_login(self):
         """로그인 테스트"""
         try:
             # 개발 환경에서만 시작 로그 기록
-            if logger.should_log_info():
-                logger.log_info("[테스트] 로그인 테스트 시작")
+            logger.log_info("[테스트] 로그인 테스트 시작")
             
             result = await self.crawler.login()
             if result:
-                if logger.should_log_info():
-                    logger.log_info("[테스트] ✅ 로그인 성공")
+                logger.log_info("[테스트] ✅ 로그인 성공")
                 return True
             else:
-                logger.log_error("A", "로그인", "FAIL_AUTH", "로그인 실패")
+                logger.log_error(ErrorCode.FAIL_AUTH, "로그인", "로그인 실패")
                 await self.send_error_notification("로그인", "로그인 실패")
                 return False
                 
         except Exception as e:
-            logger.log_error("A", "로그인", "FAIL_AUTH", str(e))
+            logger.log_error(ErrorCode.FAIL_AUTH, "로그인", str(e))
             await self.send_error_notification("로그인", str(e))
             return False
     
@@ -97,13 +94,11 @@ class AStoreCouponTester:
         """차량 검색 테스트 (reference/a_store.py 로직 적용)"""
         try:
             # 개발 환경에서만 시작 로그 기록
-            if logger.should_log_info():
-                logger.log_info(f"[테스트] 차량 검색 테스트 시작: {car_number}")
+            logger.log_info(f"[테스트] 차량 검색 테스트 시작: {car_number}")
             
             # 차량번호 입력
             await self.crawler.page.fill("#carNumber", car_number)
-            if logger.should_log_info():
-                self.crawler.logger.log_info('[차량검색] 차량 번호 입력 성공')
+            self.crawler.logger.log_info('[차량검색] 차량 번호 입력 성공')
             
             # 검색 버튼 클릭 (여러 셀렉터 시도)
             try:
@@ -123,7 +118,7 @@ class AStoreCouponTester:
                 if await park_name_elem.count() > 0:
                     park_name_text = await park_name_elem.inner_text()
                     if '검색된 차량이 없습니다.' in park_name_text:
-                        logger.log_error("A", "차량검색", "NO_VEHICLE", f"차량번호 {car_number} 검색 결과 없음")
+                        logger.log_error(ErrorCode.NO_VEHICLE, "차량검색", f"차량번호 {car_number} 검색 결과 없음")
                         await self.send_error_notification("차량검색", f"차량번호 {car_number} 검색 결과 없음", car_number)
                         return False, None
             except Exception:
@@ -132,34 +127,31 @@ class AStoreCouponTester:
             # 기존: 검색 결과 확인
             no_result = self.crawler.page.locator('text="검색된 차량이 없습니다"')
             if await no_result.count() > 0:
-                logger.log_error("A", "차량검색", "NO_VEHICLE", f"차량번호 {car_number} 검색 결과 없음")
+                logger.log_error(ErrorCode.NO_VEHICLE, "차량검색", f"차량번호 {car_number} 검색 결과 없음")
                 await self.send_error_notification("차량검색", f"차량번호 {car_number} 검색 결과 없음", car_number)
                 return False, None
                 
             # 차량 선택 버튼 클릭
             try:
                 await self.crawler.page.click('#next')
-                if logger.should_log_info():
-                    logger.log_info('[차량검색] 차량 선택 버튼 클릭 성공')
+                logger.log_info('[차량검색] 차량 선택 버튼 클릭 성공')
                 await self.crawler.page.wait_for_timeout(5000)
             except Exception as e1:
                 try:
                     await self.crawler.page.click('button:has-text("차량 선택")')
-                    if logger.should_log_info():
-                        logger.log_info('[차량검색] button:has-text("차량 선택") 버튼 클릭 성공')
+                    logger.log_info('[차량검색] button:has-text("차량 선택") 버튼 클릭 성공')
                     await self.crawler.page.wait_for_timeout(3000)
                 except Exception as e2:
                     error_msg = f'차량 선택 버튼 클릭 실패: #next: {str(e1)}, has-text: {str(e2)}'
-                    logger.log_error("A", "차량검색", "FAIL_SEARCH", error_msg)
+                    logger.log_error(ErrorCode.FAIL_SEARCH, "차량검색", error_msg)
                     await self.send_error_notification("차량검색", error_msg, car_number)
                     return False, None
             
-            if logger.should_log_info():
-                logger.log_info(f"[차량검색] 차량번호 {car_number} 검색 및 선택 후 페이지 로딩 성공")
+            logger.log_info(f"[차량검색] 차량번호 {car_number} 검색 및 선택 후 페이지 로딩 성공")
             return True, car_number
             
         except Exception as e:
-            logger.log_error("A", "차량검색", "FAIL_SEARCH", str(e))
+            logger.log_error(ErrorCode.FAIL_SEARCH, "차량검색", str(e))
             await self.send_error_notification("차량검색", str(e), car_number)
             return False, None
     
@@ -167,8 +159,7 @@ class AStoreCouponTester:
         """쿠폰 이력 조회 테스트"""
         try:
             # 개발 환경에서만 시작 로그 기록
-            if logger.should_log_info():
-                logger.log_info("[테스트] 쿠폰 이력 조회 테스트 시작")
+            logger.log_info("[테스트] 쿠폰 이력 조회 테스트 시작")
             
             # reference/a_store.py의 get_coupon_history 로직 적용
             store_config = self.config_manager.get_store_config("A")
@@ -181,8 +172,7 @@ class AStoreCouponTester:
             # 쿠폰 없음 체크
             empty_message = await self.crawler.page.locator('#productList td.empty').count()
             if empty_message > 0:
-                if logger.should_log_info():
-                    logger.log_info("[쿠폰상태] 보유한 쿠폰이 없습니다")
+                logger.log_info("[쿠폰상태] 보유한 쿠폰이 없습니다")
                 return True, {
                     'available_coupons': {name: 0 for name in discount_types.values()},
                     'my_history': {name: 0 for name in discount_types.values()},
@@ -221,10 +211,9 @@ class AStoreCouponTester:
                     continue  # 파싱 오류는 로그 기록하지 않고 계속 진행
             
             # 개발 환경에서만 현재 보유 쿠폰 로깅
-            if logger.should_log_info():
-                logger.log_info(">>>>>[현재 적용 가능한 쿠폰]")
-                for name, counts in discount_info.items():
-                    logger.log_info(f"{name}: {counts['car']}개")
+            logger.log_info(">>>>>[현재 적용 가능한 쿠폰]")
+            for name, counts in discount_info.items():
+                logger.log_info(f"{name}: {counts['car']}개")
             
             # 우리 매장 쿠폰 내역 (#myDcList) - 로그 최소화
             my_history = {name: 0 for name in discount_types.values()}
@@ -247,10 +236,9 @@ class AStoreCouponTester:
                 pass  # myDcList 처리 실패는 로그 기록하지 않음
             
             # 개발 환경에서만 우리 매장 쿠폰 내역 로깅
-            if logger.should_log_info():
-                logger.log_info(">>>>>[우리 매장에서 적용한 쿠폰]")
-                for name, count in my_history.items():
-                    logger.log_info(f"{name}: {count}개")
+            logger.log_info(">>>>>[우리 매장에서 적용한 쿠폰]")
+            for name, count in my_history.items():
+                logger.log_info(f"{name}: {count}개")
             
             # 전체 쿠폰 이력 (#allDcList) - 로그 최소화
             total_history = {name: 0 for name in discount_types.values()}
@@ -273,10 +261,9 @@ class AStoreCouponTester:
                 pass  # allDcList 처리 실패는 로그 기록하지 않음
             
             # 개발 환경에서만 전체 쿠폰 이력 로깅
-            if logger.should_log_info():
-                logger.log_info(">>>>>[전체 적용된 쿠폰] (다른매장+우리매장)")
-                for name, count in total_history.items():
-                    logger.log_info(f"{name}: {count}개")
+            logger.log_info(">>>>>[전체 적용된 쿠폰] (다른매장+우리매장)")
+            for name, count in total_history.items():
+                logger.log_info(f"{name}: {count}개")
             
             coupon_history = {
                 'available_coupons': {name: counts['car'] for name, counts in discount_info.items()},
@@ -284,12 +271,11 @@ class AStoreCouponTester:
                 'total_history': total_history
             }
             
-            if logger.should_log_info():
-                logger.log_info("[테스트] ✅ 쿠폰 이력 조회 성공")
+            logger.log_info("[테스트] ✅ 쿠폰 이력 조회 성공")
             return True, coupon_history
             
         except Exception as e:
-            logger.log_error("A", "쿠폰조회", "FAIL_PARSE", str(e))
+            logger.log_error(ErrorCode.FAIL_PARSE, "쿠폰조회", str(e))
             await self.send_error_notification("쿠폰조회", str(e), car_number)
             return False, None
     
@@ -297,8 +283,7 @@ class AStoreCouponTester:
         """쿠폰 적용 테스트"""
         try:
             # 개발 환경에서만 시작 로그 기록
-            if logger.should_log_info():
-                logger.log_info("[테스트] 쿠폰 적용 테스트 시작")
+            logger.log_info("[테스트] 쿠폰 적용 테스트 시작")
             
             # 적용 가능 여부 미리 확인
             for app_data in test_applications:
@@ -308,13 +293,12 @@ class AStoreCouponTester:
                 
                 if required_count > available_count:
                     error_msg = f"{coupon_name} 적용 실패: 필요 {required_count}개, 보유 {available_count}개"
-                    logger.log_error("A", "쿠폰적용", "FAIL_APPLY", error_msg)
+                    logger.log_error(ErrorCode.FAIL_APPLY, "쿠폰적용", error_msg)
                     await self.send_error_notification("쿠폰적용", error_msg)
                     return False
                 
                 # 개발 환경에서만 적용 예정 로그 기록
-                if logger.should_log_info():
-                    logger.log_info(f"[테스트] 적용 예정: {coupon_name} {required_count}개 (보유: {available_count}개)")
+                logger.log_info(f"[테스트] 적용 예정: {coupon_name} {required_count}개 (보유: {available_count}개)")
             
             # CouponApplication 객체 생성
             applications = []
@@ -338,16 +322,15 @@ class AStoreCouponTester:
             result = await self.crawler.apply_coupons(applications)
             
             if result:
-                if logger.should_log_info():
-                    logger.log_info("[테스트] ✅ 쿠폰 적용 성공")
+                logger.log_info("[테스트] ✅ 쿠폰 적용 성공")
                 return True
             else:
-                logger.log_error("A", "쿠폰적용", "FAIL_APPLY", "apply_coupons 메서드가 False 반환")
+                logger.log_error(ErrorCode.FAIL_APPLY, "쿠폰적용", "apply_coupons 메서드가 False 반환")
                 return False
                 
         except Exception as e:
             error_msg = f"쿠폰 적용 중 예외 발생: {str(e)}"
-            logger.log_error("A", "쿠폰적용", "FAIL_APPLY", error_msg)
+            logger.log_error(ErrorCode.FAIL_APPLY, "쿠폰적용", error_msg)
             await self.send_error_notification("쿠폰적용", error_msg)
             return False
     
@@ -366,11 +349,10 @@ class AStoreCouponTester:
                 await self.telegram_adapter.send_error_notification(error_context)
                 
                 # 개발 환경에서만 알림 전송 성공 로그 기록
-                if logger.should_log_info():
-                    logger.log_info("[텔레그램] 오류 알림 전송 성공")
+                logger.log_info("[텔레그램] 오류 알림 전송 성공")
                     
             except Exception as e:
-                logger.log_error("A", "텔레그램", "FAIL_NOTIFY", str(e))
+                logger.log_error(ErrorCode.FAIL_NETWORK, "텔레그램", str(e))
     
     async def cleanup(self):
         """테스트 정리 (AsyncIO 리소스 정리 개선)"""
@@ -381,10 +363,9 @@ class AStoreCouponTester:
             if self.crawler:
                 try:
                     await self.crawler.cleanup()
-                    if logger.should_log_info():
-                        logger.log_info("[테스트 정리] 크롤러 정리 완료")
+                    logger.log_info("[테스트 정리] 크롤러 정리 완료")
                 except Exception as e:
-                    logger.log_warning("A", "정리", f"크롤러 정리 실패: {str(e)}")
+                    logger.log_warning(f"크롤러 정리 실패: {str(e)}")
                 finally:
                     self.crawler = None
             
@@ -392,10 +373,9 @@ class AStoreCouponTester:
             if hasattr(self, 'page') and self.page:
                 try:
                     await self.page.close()
-                    if logger.should_log_info():
-                        logger.log_info("[테스트 정리] 페이지 종료 완료")
+                    logger.log_info("[테스트 정리] 페이지 종료 완료")
                 except Exception as e:
-                    logger.log_warning("A", "정리", f"페이지 종료 실패: {str(e)}")
+                    logger.log_warning(f"페이지 종료 실패: {str(e)}")
                 finally:
                     self.page = None
             
@@ -403,10 +383,9 @@ class AStoreCouponTester:
             if self.browser:
                 try:
                     await self.browser.close()
-                    if logger.should_log_info():
-                        logger.log_info("[테스트 정리] 브라우저 종료 완료")
+                    logger.log_info("[테스트 정리] 브라우저 종료 완료")
                 except Exception as e:
-                    logger.log_warning("A", "정리", f"브라우저 종료 실패: {str(e)}")
+                    logger.log_warning(f"브라우저 종료 실패: {str(e)}")
                 finally:
                     self.browser = None
             
@@ -414,10 +393,9 @@ class AStoreCouponTester:
             if self.playwright:
                 try:
                     await self.playwright.stop()
-                    if logger.should_log_info():
-                        logger.log_info("[테스트 정리] Playwright 종료 완료")
+                    logger.log_info("[테스트 정리] Playwright 종료 완료")
                 except Exception as e:
-                    logger.log_warning("A", "정리", f"Playwright 종료 실패: {str(e)}")
+                    logger.log_warning(f"Playwright 종료 실패: {str(e)}")
                 finally:
                     self.playwright = None
             
@@ -425,7 +403,7 @@ class AStoreCouponTester:
             await asyncio.sleep(1.0)
             
         except Exception as e:
-            logger.log_warning("A", "정리", f"전체 정리 과정 중 오류: {str(e)}")
+            logger.log_warning(f"전체 정리 과정 중 오류: {str(e)}")
 
     def decide_coupon_to_apply(self, my_history: dict, total_history: dict, discount_types: dict, available_coupons: dict) -> dict:
         """
@@ -450,7 +428,7 @@ class AStoreCouponTester:
                 weekend_key = value
         
         if not all([free_key, paid_key, weekend_key]):
-            logger.log_error("A", "쿠폰로직", "FAIL_PARSE", "쿠폰 타입을 찾을 수 없습니다")
+            logger.log_error(ErrorCode.FAIL_PARSE, "쿠폰로직", "쿠폰 타입을 찾을 수 없습니다")
             return {}
         
         total_free_used = total_history.get(free_key, 0)
@@ -478,8 +456,7 @@ class AStoreCouponTester:
             }
             
             # 개발 환경에서만 로직 로그 기록
-            if logger.should_log_info():
-                logger.log_info(f"[쿠폰 로직] 평일 모드: 총 {total_needed}시간 필요, 이미 적용: {already_applied}시간")
+            logger.log_info(f"[쿠폰 로직] 평일 모드: 총 {total_needed}시간 필요, 이미 적용: {already_applied}시간")
         else:
             total_needed = 2  # 주말 2시간
             already_applied = my_free + my_weekend
@@ -495,15 +472,13 @@ class AStoreCouponTester:
             }
             
             # 개발 환경에서만 로직 로그 기록
-            if logger.should_log_info():
-                logger.log_info(f"[쿠폰 로직] 주말 모드: 총 {total_needed}시간 필요, 이미 적용: {already_applied}시간")
+            logger.log_info(f"[쿠폰 로직] 주말 모드: 총 {total_needed}시간 필요, 이미 적용: {already_applied}시간")
         
         # 개발 환경에서만 적용할 쿠폰 결과 로깅
-        if logger.should_log_info():
-            logger.log_info(">>>>>[적용할 쿠폰]<<<<<")
-            for name, count in result.items():
-                if count > 0:
-                    logger.log_info(f"{name}: {count}개")
+        logger.log_info(">>>>>[적용할 쿠폰]<<<<<")
+        for name, count in result.items():
+            if count > 0:
+                logger.log_info(f"{name}: {count}개")
         
         return result
 
@@ -569,23 +544,19 @@ async def run_full_test():
                 
                 await tester.test_coupon_application(test_applications, coupon_history['available_coupons'])
             else:
-                if logger.should_log_info():
-                    logger.log_info("[전체 테스트] 쿠폰 적용 테스트 건너뜀")
+                logger.log_info("[전체 테스트] 쿠폰 적용 테스트 건너뜀")
         else:
             print("\n=== 적용할 쿠폰 없음 ===")
             print("이미 충분한 할인이 적용되었거나 적용 가능한 쿠폰이 없습니다.")
-            if logger.should_log_info():
-                logger.log_info("[전체 테스트] 적용할 쿠폰이 없어 테스트 건너뜀")
+            logger.log_info("[전체 테스트] 적용할 쿠폰이 없어 테스트 건너뜀")
         
-        if logger.should_log_info():
-            logger.log_info("[전체 테스트] ✅ 모든 테스트 완료")
+        logger.log_info("[전체 테스트] ✅ 모든 테스트 완료")
         
     except KeyboardInterrupt:
-        if logger.should_log_info():
-            logger.log_info("[전체 테스트] 사용자에 의한 중단")
+        logger.log_info("[전체 테스트] 사용자에 의한 중단")
         print("\n[중단] 사용자에 의해 테스트가 중단되었습니다.")
     except Exception as e:
-        logger.log_error("A", "전체테스트", "FAIL_TEST", str(e))
+        logger.log_error(ErrorCode.FAIL_TEST, "전체테스트", str(e))
         print(f"❌ 테스트 중 오류 발생: {str(e)}")
     finally:
         # 리소스 정리
