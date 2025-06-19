@@ -407,12 +407,19 @@ class AStoreCouponTester:
 
     def decide_coupon_to_apply(self, my_history: dict, total_history: dict, discount_types: dict, available_coupons: dict) -> dict:
         """
-        적용할 쿠폰 개수 결정 (discount_logic.py 로직 적용)
+        적용할 쿠폰 개수 결정 (시간 기반 계산 로직 적용)
         """
+        print(f"[TEST_A_STORE_COUPON] decide_coupon_to_apply 메서드 호출됨!")
+        print(f"[TEST_A_STORE_COUPON] my_history: {my_history}")
+        print(f"[TEST_A_STORE_COUPON] total_history: {total_history}")
+        print(f"[TEST_A_STORE_COUPON] available_coupons: {available_coupons}")
+        
         # 현재 시간으로 평일/주말 판단
         from datetime import datetime
         now = datetime.now()
         is_weekday_bool = now.weekday() < 5
+        
+        print(f"[TEST_A_STORE_COUPON] is_weekday: {is_weekday_bool}")
         
         # 쿠폰 키 매핑
         free_key = None
@@ -427,27 +434,68 @@ class AStoreCouponTester:
             elif "1시간주말할인권(유료)" in value:
                 weekend_key = value
         
+        print(f"[TEST_A_STORE_COUPON] 쿠폰 키 매핑: free={free_key}, paid={paid_key}, weekend={weekend_key}")
+        
         if not all([free_key, paid_key, weekend_key]):
             logger.log_error(ErrorCode.FAIL_PARSE, "쿠폰로직", "쿠폰 타입을 찾을 수 없습니다")
             return {}
+        
+        # 쿠폰별 지속시간 (분) - A매장 기준
+        coupon_durations = {
+            free_key: 60,    # 30분할인권(무료) -> 실제로는 60분
+            paid_key: 60,    # 1시간할인권(유료)
+            weekend_key: 60  # 1시간주말할인권(유료)
+        }
         
         total_free_used = total_history.get(free_key, 0)
         my_free = my_history.get(free_key, 0)
         my_paid = my_history.get(paid_key, 0)
         my_weekend = my_history.get(weekend_key, 0)
         
+        print(f"[TEST_A_STORE_COUPON] 쿠폰 사용 이력: total_free_used={total_free_used}, my_free={my_free}, my_paid={my_paid}, my_weekend={my_weekend}")
+        
+        # 현재 적용된 총 시간 계산 (분 단위)
+        current_minutes = (
+            my_free * coupon_durations[free_key] +
+            my_paid * coupon_durations[paid_key] +
+            my_weekend * coupon_durations[weekend_key]
+        )
+        current_hours = current_minutes / 60.0
+        
+        print(f"[TEST_A_STORE_COUPON] 현재 적용된 시간: {current_hours:.1f}시간 ({current_minutes}분)")
+        
         # 보유 쿠폰 확인
         available_free = available_coupons.get(free_key, 0)
         available_paid = available_coupons.get(paid_key, 0)
         available_weekend = available_coupons.get(weekend_key, 0)
         
+        print(f"[TEST_A_STORE_COUPON] 보유 쿠폰: available_free={available_free}, available_paid={available_paid}, available_weekend={available_weekend}")
+        
         if is_weekday_bool:
-            total_needed = 3  # 평일 3시간
-            already_applied = my_free + my_paid
-            remaining_needed = max(0, total_needed - already_applied)
+            target_hours = 3.0  # 평일 3시간
+            remaining_hours = max(0, target_hours - current_hours)
             
+            print(f"[TEST_A_STORE_COUPON] 평일 모드: 목표 {target_hours:.1f}시간, 남은 필요: {remaining_hours:.1f}시간")
+            
+            # 무료 쿠폰 적용 여부 결정
             free_apply = 0 if total_free_used > 0 else min(available_free, max(0, 1 - my_free))
-            paid_apply = min(available_paid, max(0, remaining_needed - free_apply))
+            
+            print(f"[TEST_A_STORE_COUPON] 무료 쿠폰 적용: {free_apply}개 (total_free_used={total_free_used})")
+            
+            # 무료 쿠폰 적용 시 추가되는 시간 계산
+            free_hours_to_add = free_apply * (coupon_durations[free_key] / 60.0)
+            
+            # 유료 쿠폰으로 채워야 할 시간
+            paid_hours_needed = max(0, remaining_hours - free_hours_to_add)
+            
+            print(f"[TEST_A_STORE_COUPON] 유료 쿠폰으로 채워야 할 시간: {paid_hours_needed:.1f}시간")
+            
+            # 필요한 유료 쿠폰 개수 (올림 처리)
+            paid_apply = 0
+            if paid_hours_needed > 0:
+                paid_needed_count = int((paid_hours_needed * 60 + coupon_durations[paid_key] - 1) // coupon_durations[paid_key])
+                paid_apply = min(available_paid, paid_needed_count)
+                print(f"[TEST_A_STORE_COUPON] 필요한 유료 쿠폰: {paid_needed_count}개, 실제 적용: {paid_apply}개")
             
             result = {
                 free_key: free_apply,
@@ -456,14 +504,25 @@ class AStoreCouponTester:
             }
             
             # 개발 환경에서만 로직 로그 기록
-            logger.log_info(f"[쿠폰 로직] 평일 모드: 총 {total_needed}시간 필요, 이미 적용: {already_applied}시간")
+            logger.log_info(f"[쿠폰 로직] 평일 모드: 목표 {target_hours:.1f}시간, 현재 적용: {current_hours:.1f}시간, 남은 필요: {remaining_hours:.1f}시간")
         else:
-            total_needed = 2  # 주말 2시간
-            already_applied = my_free + my_weekend
-            remaining_needed = max(0, total_needed - already_applied)
+            target_hours = 2.0  # 주말 2시간
+            remaining_hours = max(0, target_hours - current_hours)
             
+            # 무료 쿠폰 적용 여부 결정
             free_apply = 0 if total_free_used > 0 else min(available_free, max(0, 1 - my_free))
-            weekend_apply = min(available_weekend, max(0, remaining_needed - free_apply))
+            
+            # 무료 쿠폰 적용 시 추가되는 시간 계산
+            free_hours_to_add = free_apply * (coupon_durations[free_key] / 60.0)
+            
+            # 주말 쿠폰으로 채워야 할 시간
+            weekend_hours_needed = max(0, remaining_hours - free_hours_to_add)
+            
+            # 필요한 주말 쿠폰 개수 (올림 처리)
+            weekend_apply = 0
+            if weekend_hours_needed > 0:
+                weekend_needed_count = int((weekend_hours_needed * 60 + coupon_durations[weekend_key] - 1) // coupon_durations[weekend_key])
+                weekend_apply = min(available_weekend, weekend_needed_count)
             
             result = {
                 free_key: free_apply,
@@ -472,7 +531,9 @@ class AStoreCouponTester:
             }
             
             # 개발 환경에서만 로직 로그 기록
-            logger.log_info(f"[쿠폰 로직] 주말 모드: 총 {total_needed}시간 필요, 이미 적용: {already_applied}시간")
+            logger.log_info(f"[쿠폰 로직] 주말 모드: 목표 {target_hours:.1f}시간, 현재 적용: {current_hours:.1f}시간, 남은 필요: {remaining_hours:.1f}시간")
+        
+        print(f"[TEST_A_STORE_COUPON] 최종 결과: {result}")
         
         # 개발 환경에서만 적용할 쿠폰 결과 로깅
         logger.log_info(">>>>>[적용할 쿠폰]<<<<<")

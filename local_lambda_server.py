@@ -99,7 +99,10 @@ def test_endpoint():
     if request.method == 'GET':
         return """
         <html>
-        <head><title>주차 쿠폰 자동화 테스트</title></head>
+        <head>
+            <title>주차 쿠폰 자동화 테스트</title>
+            <meta charset="UTF-8">
+        </head>
         <body>
             <h2>주차 쿠폰 자동화 테스트</h2>
             <form method="POST">
@@ -135,14 +138,24 @@ def test_endpoint():
                                  json=test_data,
                                  content_type='application/json')
             
+        # JSON 응답을 한글이 제대로 표시되도록 포맷팅
+        try:
+            response_json = response.get_json()
+            formatted_response = json.dumps(response_json, ensure_ascii=False, indent=2)
+        except:
+            formatted_response = response.get_data(as_text=True)
+            
         return f"""
         <html>
-        <head><title>실행 결과</title></head>
+        <head>
+            <title>실행 결과</title>
+            <meta charset="UTF-8">
+        </head>
         <body>
             <h2>실행 결과</h2>
             <p><strong>상태 코드:</strong> {response.status_code}</p>
             <p><strong>응답:</strong></p>
-            <pre>{response.get_data(as_text=True)}</pre>
+            <pre>{formatted_response}</pre>
             <p><a href="/test">다시 테스트</a></p>
         </body>
         </html>
@@ -162,7 +175,10 @@ def home():
     """홈 페이지"""
     return """
     <html>
-    <head><title>AWS Lambda 시뮬레이션 서버</title></head>
+    <head>
+        <title>AWS Lambda 시뮬레이션 서버</title>
+        <meta charset="UTF-8">
+    </head>
     <body>
         <h1>AWS Lambda 시뮬레이션 서버</h1>
         <p>이 서버는 AWS Lambda 환경을 로컬에서 시뮬레이션합니다.</p>
