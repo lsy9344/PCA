@@ -3,15 +3,15 @@ B 매장 할인 규칙 - 실제 테스트 검증된 버전
 - PAID_30MIN: 유료 30분할인 (남은잔여량에서 계산)
 - FREE_1HOUR: 무료 1시간할인 (무제한 사용 가능)
 """
-from .base_discount_rule import BaseDiscountRule
 from typing import Dict
+import logging
 
 
-class BDiscountRule(BaseDiscountRule):
+class BDiscountRule:
     """B 매장 할인 규칙 - 실제 테스트 검증된 버전"""
     
     def __init__(self):
-        super().__init__()
+        self.logger = logging.getLogger(__name__)
         # B 매장 쿠폰 타입 정의 (실제 크롤링 결과와 일치)
         self.coupon_types = {
             'PAID_30MIN': '유료 30분할인',    # 남은잔여량 ÷ 300
