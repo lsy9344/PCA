@@ -68,16 +68,21 @@ class BDiscountRule:
             remaining_hours = target_hours - current_hours
             self.logger.info(f"📊 추가 필요 할인: {remaining_hours}시간")
             
-            # A 매장과 동일한 규칙 적용
-            # 1. 무료 1시간할인 적용 (전체 이력에 없고, 아직 적용하지 않은 경우)
+            # A 매장과 동일한 규칙 적용 - 무료 쿠폰 원칙 적용
+            # 1. 무료 1시간할인 적용 (my_history 또는 total_history 중 어느 하나라도 사용되었다면 적용하지 않음)
             total_free_used = total_history.get('FREE_1HOUR', 0)
-            if total_free_used == 0 and current_free_1hour == 0:
+            my_free_used = my_history.get('FREE_1HOUR', 0)
+            
+            if my_free_used > 0:
+                self.logger.info(f"ℹ️ 무료 1시간할인 이미 사용됨 - 현재 매장: {my_free_used}개")
+            elif total_free_used > 0:
+                self.logger.info(f"ℹ️ 무료 1시간할인 이미 사용됨 - 전체 매장: {total_free_used}개")
+            else:
+                # 무료 쿠폰이 한 번도 사용되지 않았을 때만 적용
                 free_apply = 1
                 coupons_to_apply['FREE_1HOUR'] = free_apply
                 remaining_hours -= 1
-                self.logger.info(f"🎫 무료 1시간할인 {free_apply}개 적용 예정")
-            else:
-                self.logger.info("ℹ️ 무료 1시간할인 이미 사용됨 (전체 또는 우리 매장)")
+                self.logger.info(f"🎫 무료 1시간할인 {free_apply}개 적용 예정 (무료 쿠폰 미사용 확인됨)")
             
             # 2. 남은 시간을 유료 30분할인으로 채우기
             if remaining_hours > 0:

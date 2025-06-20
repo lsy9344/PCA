@@ -340,41 +340,76 @@ class BStoreCrawler:
             self.logger.warning(f"⚠️ 검색 상태 유지 체크박스 처리 중 오류: {str(e)}")
 
     async def _analyze_discount_history(self, page: Page, my_history: Dict[str, int], total_history: Dict[str, int]):
-        """할인등록현황 테이블 분석"""
+        """할인등록현황 테이블 분석 - 사용자가 제공한 HTML 구조 기반으로 정확히 파싱"""
         try:
-            # 할인 내역 테이블에서 모든 행 가져오기 (두 번째 테이블이 할인내역)
-            table_rows = page.locator('table').nth(1).locator('tbody tr')
-            row_count = await table_rows.count()
+            self.logger.info("📊 할인 내역 테이블 분석 시작")
             
-            self.logger.info(f"📊 할인 내역 테이블 분석 시작 (총 {row_count}행)")
+            # 사용자 제공 HTML을 기반으로 할인내역 테이블 찾기
+            # 클래스 "obj_row20px"와 "cellpadding=0 cellspacing=0"을 가진 테이블 찾기
+            discount_tables = page.locator('table[cellpadding="0"][cellspacing="0"].obj_row20px')
+            table_count = await discount_tables.count()
             
-            # 데이터 행만 처리 (헤더 행 제외)
+            if table_count == 0:
+                # 대안: 할인 관련 키워드가 있는 모든 테이블 검색
+                all_tables = page.locator('table')
+                total_table_count = await all_tables.count()
+                self.logger.info(f"📋 페이지 전체 테이블 수: {total_table_count}")
+                
+                for i in range(total_table_count):
+                    table = all_tables.nth(i)
+                    table_text = await table.text_content()
+                    if "할인값" in table_text and "등록자" in table_text:
+                        discount_tables = table
+                        table_count = 1
+                        self.logger.info(f"✅ 할인내역 테이블 발견: 테이블 {i}")
+                        break
+            
+            if table_count == 0:
+                self.logger.warning("⚠️ 할인내역 테이블을 찾을 수 없음")
+                return
+            
+            # 할인내역 테이블 파싱
+            current_table = discount_tables.nth(0) if table_count > 1 else discount_tables
+            
+            # tbody의 모든 행 가져오기
+            tbody_rows = current_table.locator('tbody tr')
+            tbody_row_count = await tbody_rows.count()
+            self.logger.info(f"📊 tbody에서 발견된 행 수: {tbody_row_count}")
+            
             data_row_count = 0
-            for i in range(row_count):
+            
+            for row_idx in range(tbody_row_count):
                 try:
-                    row = table_rows.nth(i)
-                    cells = row.locator('td, cell')
+                    row = tbody_rows.nth(row_idx)
+                    
+                    # 모든 셀 가져오기
+                    cells = row.locator('td')
                     cell_count = await cells.count()
                     
-                    if cell_count >= 4:  # B 매장 테이블: 순번, 할인값, 등록자, 등록시간, 삭제
-                        # 순번 셀이 숫자인지 확인 (데이터 행인지 판별)
-                        sequence_cell = cells.nth(0)
-                        sequence_text = await sequence_cell.text_content() or ""
+                    # 5개 셀 (순번, 할인값, 등록자, 등록시간, 삭제)이 있는 데이터 행만 처리
+                    if cell_count >= 4:
+                        # 각 셀의 내용 추출
+                        cell_contents = []
+                        for cell_idx in range(cell_count):
+                            cell_text = await cells.nth(cell_idx).text_content()
+                            cell_contents.append(cell_text.strip() if cell_text else "")
                         
-                        if sequence_text.strip().isdigit():
+                        # 헤더 행 스킵 (첫 번째 셀이 "순번"인 경우)
+                        if cell_contents[0] == "순번" or "할인값" in cell_contents:
+                            self.logger.info(f"📋 헤더 행 스킵: {cell_contents}")
+                            continue
+                        
+                        # 실제 데이터가 있는 행인지 확인 (두 번째 셀에 "할인"이 포함되어야 함)
+                        if len(cell_contents) >= 3 and "할인" in cell_contents[1]:
                             data_row_count += 1
                             
-                            # 할인값 (1번째 컬럼) - "유료 30분할인" 형식
-                            discount_value_cell = cells.nth(1)
-                            discount_value = await discount_value_cell.text_content() or ""
+                            # 데이터 추출
+                            sequence = cell_contents[0] if len(cell_contents) > 0 else ""
+                            discount_value = cell_contents[1] if len(cell_contents) > 1 else ""
+                            registrant = cell_contents[2] if len(cell_contents) > 2 else ""
+                            time_text = cell_contents[3] if len(cell_contents) > 3 else ""
                             
-                            # 등록자 (2번째 컬럼) - "215(이수열)" 형식
-                            registrant_cell = cells.nth(2)
-                            registrant = await registrant_cell.text_content() or ""
-                            
-                            # 등록시간 (3번째 컬럼) 
-                            time_cell = cells.nth(3)
-                            time_text = await time_cell.text_content() or ""
+                            self.logger.info(f"📋 데이터 행 {data_row_count}: 순번=[{sequence}] 할인값=[{discount_value}] 등록자=[{registrant}] 시간=[{time_text}]")
                             
                             # 쿠폰 타입 추출
                             coupon_type = self._extract_coupon_type(discount_value)
@@ -385,15 +420,19 @@ class BStoreCrawler:
                                 # 등록자에서 ID 추출 (215(이수열) -> 215)
                                 registrant_id = registrant.split('(')[0].strip()
                                 
-                                # 등록자가 우리 매장 ID(215)인 경우 우리 매장 내역에도 추가
+                                # 등록자가 우리 매장 ID(215)와 일치하는지 확인
                                 if registrant_id == self.user_id:
                                     my_history[coupon_type] = my_history.get(coupon_type, 0) + 1
                                     self.logger.info(f"   🏪 우리 매장 할인: {coupon_type} - {registrant} ({time_text})")
                                 else:
                                     self.logger.info(f"   🌍 타 매장 할인: {coupon_type} - {registrant} ({time_text})")
-                
+                            else:
+                                self.logger.warning(f"⚠️ 알 수 없는 할인 타입: {discount_value}")
+                        else:
+                            self.logger.debug(f"📋 비할인 행 스킵: {cell_contents}")
+                        
                 except Exception as e:
-                    self.logger.warning(f"⚠️ 테이블 행 {i} 처리 중 오류: {str(e)}")
+                    self.logger.warning(f"⚠️ 행 {row_idx} 처리 중 오류: {str(e)}")
                     continue
             
             self.logger.info(f"📊 할인 내역 분석 완료: 총 {data_row_count}건의 할인 발견")

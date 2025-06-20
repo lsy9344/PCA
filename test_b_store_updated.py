@@ -52,7 +52,7 @@ async def test_b_store_updated():
             
             # 2. 존재하는 차량번호로 검색 테스트
             logger.info("\n=== 2단계: 존재하는 차량번호 검색 테스트 ===")
-            existing_car = "8876"  # 존재하는 차량번호
+            existing_car = "1234"  # 존재하는 차량번호 (테스트용)
             search_success = await crawler.search_car(page, existing_car)
             if search_success:
                 logger.info(f"✅ 차량번호 '{existing_car}' 검색 성공")
@@ -76,34 +76,7 @@ async def test_b_store_updated():
                     logger.info("ℹ️ 적용할 쿠폰이 없습니다")
             else:
                 logger.warning(f"⚠️ 차량번호 '{existing_car}' 검색 실패")
-            
-            # 4. 존재하지 않는 차량번호로 텔레그램 알림 테스트
-            logger.info("\n=== 4단계: 존재하지 않는 차량번호 텔레그램 알림 테스트 ===")
-            nonexistent_car = "9999"  # 존재하지 않는 차량번호
-            logger.info(f"📱 차량번호 '{nonexistent_car}'로 텔레그램 알림 테스트 시작...")
-            
-            # 새로운 페이지 탭으로 테스트 (기존 검색 상태 초기화)
-            new_page = await browser.new_page()
-            
-            # 로그인 다시 수행
-            login_success_2 = await crawler.login(new_page)
-            if login_success_2:
-                # 존재하지 않는 차량번호로 검색
-                search_result = await crawler.search_car(new_page, nonexistent_car)
-                if not search_result:
-                    logger.info("✅ 차량번호 없음 감지 및 텔레그램 알림 전송 완료")
-                else:
-                    logger.warning("⚠️ 예상과 다르게 차량이 검색되었습니다")
-            
-            await new_page.close()
-            
-            logger.info("\n🎉 B 매장 업데이트된 기능 테스트 완료!")
-            
-        except Exception as e:
-            logger.error(f"❌ 테스트 중 오류 발생: {str(e)}")
-            import traceback
-            logger.error(f"스택 트레이스: {traceback.format_exc()}")
-        
+       
         finally:
             # 사용자가 결과를 확인할 수 있도록 잠시 대기
             logger.info("⏱️ 10초 후 브라우저를 닫습니다...")

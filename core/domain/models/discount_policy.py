@@ -122,22 +122,28 @@ class DiscountCalculator:
         for rule in free_rules:
             print(f"\n[무료쿠폰] 검토 중: {rule.coupon_name}")
             
-            # 전체 매장에서 이미 사용했다면 스킵
+            # 무료 쿠폰 원칙: my_history 또는 total_history 중 어느 하나라도 사용되었다면 적용하지 않음
+            my_used = my_history.get(rule.coupon_name, 0)
             total_used = total_history.get(rule.coupon_name, 0)
+            
+            print(f"[무료쿠폰] 현재 매장 사용: {my_used}개")
+            print(f"[무료쿠폰] 전체 매장 사용: {total_used}개")
+            
+            if my_used > 0:
+                print(f"[무료쿠폰] ❌ 현재 매장에서 이미 {my_used}개 사용됨. 스킵.")
+                continue
+                
             if total_used > 0:
                 print(f"[무료쿠폰] ❌ 전체 매장에서 이미 {total_used}개 사용됨. 스킵.")
                 continue
             
-            # 목표: 1개, 현재 적용된 개수 차감 (룰파일 4.4 공식)
-            my_used = my_history.get(rule.coupon_name, 0)
-            needed_count = max(0, 1 - my_used)
+            # 무료 쿠폰이 한 번도 사용되지 않았다면 1개 적용
             available = available_coupons.get(rule.coupon_name, 0)
-            
-            print(f"[무료쿠폰] 현재 매장 사용: {my_used}개, 목표: 1개, 추가 필요: {needed_count}개")
             print(f"[무료쿠폰] 보유 쿠폰: {available}개")
+            print(f"[무료쿠폰] 무료 쿠폰 미사용 확인됨. 1개 적용 예정.")
             
             # 실제 적용 가능한 개수
-            apply_count = min(needed_count, available) if needed_count > 0 else 0
+            apply_count = min(1, available) if available > 0 else 0
             
             if apply_count > 0:
                 applications.append(CouponApplication(
@@ -152,10 +158,7 @@ class DiscountCalculator:
                 print(f">>>>> 적용할 쿠폰: {rule.coupon_name} {apply_count}개 ({apply_minutes}분)")
                 print(f"[무료쿠폰] ✅ 적용 후 남은 필요 시간: {remaining_minutes:.0f}분")
             else:
-                if needed_count <= 0:
-                    print(f"[무료쿠폰] ℹ️  이미 목표 개수(1개)를 충족함.")
-                else:
-                    print(f"[무료쿠폰] ❌ 보유 쿠폰 부족 (필요: {needed_count}개, 보유: {available}개)")
+                print(f"[무료쿠폰] ❌ 보유 쿠폰 부족 (필요: 1개, 보유: {available}개)")
         
         print(f"\n{'-'*50}")
         print(f"2단계: {period_type} 쿠폰 계산 (룰파일 4.2/4.3)")
