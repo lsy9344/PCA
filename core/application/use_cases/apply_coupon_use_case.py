@@ -56,7 +56,10 @@ class ApplyCouponUseCase:
             # 차량 검색 성공 로그 제거 (크롤러에서 이미 처리)
 
             # 4. 쿠폰 이력 조회
-            discount_info, my_history, total_history = await store_instance.get_coupon_history()
+            coupon_history = await store_instance.get_coupon_history(vehicle)
+            discount_info = coupon_history.available_coupons
+            my_history = coupon_history.my_history
+            total_history = coupon_history.total_history
             # 쿠폰 조회 성공 로그 제거 (크롤러에서 이미 처리)
 
             # 5. 할인 계산 (프로덕션에서는 상세 정보 생략)
@@ -90,6 +93,7 @@ class ApplyCouponUseCase:
                     self._logger.info(f"[{request.store_id}] 계산 결과: {app.coupon_name} {app.count}개")
 
             # 8. 쿠폰 적용 (적용할 쿠폰이 있는 경우에만 로그)
+            actually_applied_coupons = []
             if applications:
                 # 적용할 쿠폰 요약 로그 (간소화)
                 self._logger.info(f"[{request.store_id}] >>>>>[적용할 쿠폰]")
@@ -98,8 +102,19 @@ class ApplyCouponUseCase:
                         self._logger.info(f"[{request.store_id}] {application.coupon_name}: {application.count}개")
                 
                 # 쿠폰 적용 실행
-                apply_success = await store_instance.apply_coupons(applications)
-                if not apply_success:
+                apply_result = await store_instance.apply_coupons(applications)
+                
+                # apply_result가 리스트인 경우 (실제 적용된 쿠폰 목록)
+                if isinstance(apply_result, list):
+                    actually_applied_coupons = apply_result
+                # apply_result가 boolean인 경우
+                elif apply_result:
+                    # 성공한 경우 계산된 쿠폰을 적용된 것으로 간주
+                    actually_applied_coupons = [
+                        {app.coupon_name: app.count} for app in applications if app.count > 0
+                    ]
+                else:
+                    # 실패한 경우
                     raise Exception("쿠폰 적용 실패")
             else:
                 self._logger.info(f"[{request.store_id}][쿠폰적용] 적용할 쿠폰이 없습니다")
@@ -117,9 +132,7 @@ class ApplyCouponUseCase:
                 success=True,
                 store_id=request.store_id,
                 vehicle_number=request.vehicle_number,
-                applied_coupons=[
-                    {app.coupon_name: app.count} for app in applications if app.count > 0
-                ]
+                applied_coupons=actually_applied_coupons
             )
             
         except Exception as e:

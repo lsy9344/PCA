@@ -9,6 +9,7 @@ login:
   password: "4318"
 
 # 쿠폰 타입 매핑 (실제 확인된 타입)
+# B 매장 특수사항: 주말 전용 쿠폰 없음, 무료 쿠폰 항상 보유
 coupons:
   FREE_1HOUR:
     name: "무료 1시간할인"
@@ -16,15 +17,11 @@ coupons:
     duration_minutes: 60
     priority: 0
   PAID_30MIN:
-    name: "유료 30분할인"
+    name: "유료 30분할인 (판매 : 300 )"
     type: "paid"
     duration_minutes: 30
     priority: 1
-  PAID_24HOUR:
-    name: "유료 24시간할인"
-    type: "paid"
-    duration_minutes: 1440
-    priority: 2
+  # WEEKEND 타입 쿠폰 없음 - 주말에도 PAID 타입 사용
 
 # 할인 정책
 discount_policy:

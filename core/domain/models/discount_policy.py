@@ -164,8 +164,18 @@ class DiscountCalculator:
         print(f"2단계: {period_type} 쿠폰 계산 (룰파일 4.2/4.3)")
         print(f"{'-'*50}")
         
-        # 2. 유료/주말 쿠폰 계산 (룰파일 4.2/4.3에 따른 쿠폰별 목표 기반 계산)
-        target_coupon_types = [CouponType.PAID] if is_weekday else [CouponType.WEEKEND]
+        # 2. 유료/주말 쿠폰 계산 - fallback 로직 추가
+        if is_weekday:
+            target_coupon_types = [CouponType.PAID]
+        else:
+            # 주말: 먼저 WEEKEND 타입 확인, 없으면 PAID 타입 사용
+            weekend_rules = [rule for rule in self.coupon_rules if rule.coupon_type == CouponType.WEEKEND]
+            if weekend_rules:
+                target_coupon_types = [CouponType.WEEKEND]
+                print(f"[주말쿠폰] WEEKEND 타입 쿠폰 발견: {len(weekend_rules)}개")
+            else:
+                target_coupon_types = [CouponType.PAID]
+                print(f"[주말쿠폰] WEEKEND 타입 없음. PAID 타입으로 대체")
         
         for target_type in target_coupon_types:
             target_rules = [rule for rule in self.coupon_rules if rule.coupon_type == target_type]
@@ -178,7 +188,13 @@ class DiscountCalculator:
                 print(f"\n[{target_type.value}쿠폰] 검토 중: {rule.coupon_name} ({rule.duration_minutes}분)")
                 
                 # 쿠폰별 목표 개수 기반 계산 (룰파일 4.2-4.3)
-                target_count = self.policy.get_coupon_target_count(rule.coupon_type, is_weekday)
+                if target_type == CouponType.PAID and not is_weekday:
+                    # 주말에 PAID 쿠폰을 사용하는 경우, 주말 목표 개수 사용
+                    target_count = self.policy.weekend_coupon_target_count
+                    print(f"[{target_type.value}쿠폰] 주말 PAID 쿠폰 사용: 목표 {target_count}개")
+                else:
+                    target_count = self.policy.get_coupon_target_count(rule.coupon_type, is_weekday)
+                
                 my_used = my_history.get(rule.coupon_name, 0)
                 additional_needed = max(0, target_count - my_used)
                 available = available_coupons.get(rule.coupon_name, 0)

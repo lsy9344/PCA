@@ -19,7 +19,7 @@ from infrastructure.logging.structured_logger import StructuredLogger
 async def test_b_store_automation():
     """B 매장 자동화 수동 테스트"""
     try:
-        print("🚀 B 매장 자동화 테스트 시작")
+        print("[시작] B 매장 자동화 테스트 시작")
         
         # 설정 관리자 초기화
         config_manager = ConfigManager()
@@ -59,8 +59,8 @@ async def test_b_store_automation():
         response = await b_service.execute(request)
         
         # 결과 출력
-        print(f"\n📊 실행 결과:")
-        print(f"   - 성공 여부: {'✅ 성공' if response.success else '❌ 실패'}")
+        print(f"\n[분석] 실행 결과:")
+        print(f"   - 성공 여부: {'[성공] 성공' if response.success else '[실패] 실패'}")
         print(f"   - 메시지: {response.message}")
         
         if response.applied_coupons:
@@ -76,10 +76,10 @@ async def test_b_store_automation():
             print(f"   - 에러 단계: {response.error_context.step}")
             print(f"   - 에러 상세: {response.error_context.details}")
         
-        print("\n🎉 B 매장 자동화 테스트 완료")
+        print("\n[완료] B 매장 자동화 테스트 완료")
         
     except Exception as e:
-        print(f"❌ 테스트 실행 중 오류 발생: {str(e)}")
+        print(f"[실패] 테스트 실행 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -116,7 +116,7 @@ async def test_b_discount_calculator():
             is_weekday=True
         )
         
-        print(f"✅ 계산 결과: {len(applications)}개 쿠폰")
+        print(f"[성공] 계산 결과: {len(applications)}개 쿠폰")
         for app in applications:
             print(f"   - {app.coupon_name}: {app.count}개")
         
@@ -131,12 +131,12 @@ async def test_b_discount_calculator():
             is_weekday=True
         )
         
-        print(f"✅ 계산 결과: {len(applications2)}개 쿠폰")
+        print(f"[성공] 계산 결과: {len(applications2)}개 쿠폰")
         for app in applications2:
             print(f"   - {app.coupon_name}: {app.count}개")
             
     except Exception as e:
-        print(f"❌ 할인 계산기 테스트 실행 중 오류 발생: {str(e)}")
+        print(f"[실패] 할인 계산기 테스트 실행 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -163,7 +163,7 @@ async def main():
         await test_b_discount_calculator()
         await test_b_store_automation()
     else:
-        print("❌ 잘못된 선택입니다. 전체 테스트를 실행합니다.")
+        print("[실패] 잘못된 선택입니다. 전체 테스트를 실행합니다.")
         await test_b_discount_calculator()
         await test_b_store_automation()
 

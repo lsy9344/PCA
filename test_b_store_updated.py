@@ -19,7 +19,7 @@ from infrastructure.web_automation.store_crawlers.b_store_crawler import BStoreC
 from core.domain.rules.b_discount_rule import BDiscountRule
 import logging
 
-# 로깅 설정
+## 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ async def test_b_store_updated():
         page = await browser.new_page()
         
         try:
-            logger.info("🚀 B 매장 업데이트된 자동화 테스트 시작")
+            logger.info("[시작] B 매장 업데이트된 자동화 테스트 시작")
             
             # 1. 로그인 테스트 (검색 상태 유지 체크박스 포함)
             logger.info("\n=== 1단계: 로그인 및 검색 상태 유지 체크박스 설정 ===")
@@ -48,14 +48,14 @@ async def test_b_store_updated():
                 raise Exception("로그인 실패")
             
             # 로그인 후 체크박스 상태 확인
-            logger.info("✅ 로그인 완료 - 검색 상태 유지 체크박스가 자동으로 설정되었는지 확인")
+            logger.info("[성공] 로그인 완료 - 검색 상태 유지 체크박스가 자동으로 설정되었는지 확인")
             
             # 2. 존재하는 차량번호로 검색 테스트
             logger.info("\n=== 2단계: 존재하는 차량번호 검색 테스트 ===")
             existing_car = "1234"  # 존재하는 차량번호 (테스트용)
             search_success = await crawler.search_car(page, existing_car)
             if search_success:
-                logger.info(f"✅ 차량번호 '{existing_car}' 검색 성공")
+                logger.info(f"[성공] 차량번호 '{existing_car}' 검색 성공")
                 
                 # 3. 쿠폰 이력 조회 및 적용 테스트
                 logger.info("\n=== 3단계: 쿠폰 이력 조회 및 적용 ===")
@@ -66,16 +66,16 @@ async def test_b_store_updated():
                 coupons_to_apply = discount_rule.decide_coupon_to_apply(my_history, total_history, discount_info)
                 
                 if coupons_to_apply:
-                    logger.info(f"💰 적용할 쿠폰: {coupons_to_apply}")
+                    logger.info(f"[보유] 적용할 쿠폰: {coupons_to_apply}")
                     apply_success = await crawler.apply_coupons(page, coupons_to_apply)
                     if apply_success:
-                        logger.info("✅ 쿠폰 적용 성공")
+                        logger.info("[성공] 쿠폰 적용 성공")
                     else:
-                        logger.warning("⚠️ 쿠폰 적용 실패")
+                        logger.warning("[경고] 쿠폰 적용 실패")
                 else:
-                    logger.info("ℹ️ 적용할 쿠폰이 없습니다")
+                    logger.info("[정보] 적용할 쿠폰이 없습니다")
             else:
-                logger.warning(f"⚠️ 차량번호 '{existing_car}' 검색 실패")
+                logger.warning(f"[경고] 차량번호 '{existing_car}' 검색 실패")
        
         finally:
             # 사용자가 결과를 확인할 수 있도록 잠시 대기

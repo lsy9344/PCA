@@ -25,7 +25,7 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_telegram_chat_id
 
 # Playwright 설정
-PLAYWRIGHT_HEADLESS=true
+PLAYWRIGHT_HEADLESS=false
 PLAYWRIGHT_TIMEOUT=30000
 
 # 로깅 설정

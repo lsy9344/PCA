@@ -30,14 +30,14 @@ async def test_b_store():
         result = await b_store.run(test_car_number)
         
         if result:
-            logger.info("✅ B 매장 테스트 성공")
+            logger.info("[성공] B 매장 테스트 성공")
         else:
-            logger.error("❌ B 매장 테스트 실패")
+            logger.error("[실패] B 매장 테스트 실패")
         
         return result
         
     except Exception as e:
-        logger.error(f"❌ B 매장 테스트 중 오류: {str(e)}")
+        logger.error(f"[실패] B 매장 테스트 중 오류: {str(e)}")
         return False
 
 
@@ -68,11 +68,11 @@ async def test_b_discount_rule():
         result = rule.decide_coupon_to_apply(my_history, total_history, discount_info)
         logger.info(f"테스트 케이스 2 결과: {result}")
         
-        logger.info("✅ B 매장 할인 규칙 테스트 완료")
+        logger.info("[성공] B 매장 할인 규칙 테스트 완료")
         return True
         
     except Exception as e:
-        logger.error(f"❌ B 매장 할인 규칙 테스트 중 오류: {str(e)}")
+        logger.error(f"[실패] B 매장 할인 규칙 테스트 중 오류: {str(e)}")
         return False
 
 

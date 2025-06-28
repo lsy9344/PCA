@@ -38,7 +38,7 @@ class BStoreLoginTester:
         # 기본 타임아웃 설정
         self.page.set_default_timeout(30000)
         
-        print("✅ 브라우저 초기화 완료")
+        print("[성공] 브라우저 초기화 완료")
     
     async def navigate_to_site(self):
         """B 매장 사이트 접속"""
@@ -47,7 +47,7 @@ class BStoreLoginTester:
         await self.page.goto(self.website_url)
         await self.page.wait_for_load_state('networkidle')
         
-        print("✅ 사이트 접속 완료")
+        print("[성공] 사이트 접속 완료")
         
         # 현재 페이지 URL 확인
         current_url = self.page.url
@@ -55,26 +55,26 @@ class BStoreLoginTester:
     
     async def check_login_elements(self):
         """로그인 요소들 확인"""
-        print("\n🔍 로그인 요소 확인 중...")
+        print("\n[검색] 로그인 요소 확인 중...")
         
         # 사용자명 입력란 확인
         username_input = self.page.locator('#userId')
         username_count = await username_input.count()
-        print(f"   - #userId 입력란: {'✅ 발견' if username_count > 0 else '❌ 없음'} ({username_count}개)")
+        print(f"   - #userId 입력란: {'[성공] 발견' if username_count > 0 else '[실패] 없음'} ({username_count}개)")
         
         # 비밀번호 입력란 확인
         password_input = self.page.locator('#userPwd')
         password_count = await password_input.count()
-        print(f"   - #userPwd 입력란: {'✅ 발견' if password_count > 0 else '❌ 없음'} ({password_count}개)")
+        print(f"   - #userPwd 입력란: {'[성공] 발견' if password_count > 0 else '[실패] 없음'} ({password_count}개)")
         
         # 로그인 버튼 확인
         login_button = self.page.locator('input[type="submit"]')
         button_count = await login_button.count()
-        print(f"   - input[type=\"submit\"] 버튼: {'✅ 발견' if button_count > 0 else '❌ 없음'} ({button_count}개)")
+        print(f"   - input[type=\"submit\"] 버튼: {'[성공] 발견' if button_count > 0 else '[실패] 없음'} ({button_count}개)")
         
         # 페이지 HTML 일부 확인 (디버깅용)
         if username_count == 0 or password_count == 0 or button_count == 0:
-            print("\n🔍 페이지에서 'input', 'userId', 'userPwd' 관련 요소들 검색:")
+            print("\n[검색] 페이지에서 'input', 'userId', 'userPwd' 관련 요소들 검색:")
             
             # 모든 input 요소 확인
             all_inputs = await self.page.locator('input').all()
@@ -101,15 +101,15 @@ class BStoreLoginTester:
         try:
             # 사용자명 입력
             await self.page.fill('#userId', self.username)
-            print("   ✅ 사용자명 입력 완료")
+            print("   [성공] 사용자명 입력 완료")
             
             # 비밀번호 입력
             await self.page.fill('#userPwd', self.password)
-            print("   ✅ 비밀번호 입력 완료")
+            print("   [성공] 비밀번호 입력 완료")
             
             # 로그인 버튼 클릭
             await self.page.click('input[type="submit"]')
-            print("   ✅ 로그인 버튼 클릭 완료")
+            print("   [성공] 로그인 버튼 클릭 완료")
             
             # 페이지 변화 대기 (최대 10초)
             await self.page.wait_for_timeout(3000)
@@ -117,12 +117,12 @@ class BStoreLoginTester:
             return True
             
         except Exception as e:
-            print(f"   ❌ 로그인 실패: {str(e)}")
+            print(f"   [실패] 로그인 실패: {str(e)}")
             return False
     
     async def check_login_result(self):
         """로그인 결과 확인"""
-        print(f"\n📊 로그인 결과 확인...")
+        print(f"\n[분석] 로그인 결과 확인...")
         
         # 현재 URL 확인
         current_url = self.page.url
@@ -154,11 +154,11 @@ class BStoreLoginTester:
                 pass
         
         if found_indicators:
-            print(f"   ✅ 로그인 성공 지표 발견:")
+            print(f"   [성공] 로그인 성공 지표 발견:")
             for indicator in found_indicators:
                 print(f"     - {indicator}")
         else:
-            print(f"   ⚠️  로그인 성공 지표를 찾지 못했습니다")
+            print(f"   [경고]  로그인 성공 지표를 찾지 못했습니다")
         
         # 에러 메시지 확인
         error_indicators = [
@@ -179,7 +179,7 @@ class BStoreLoginTester:
                 pass
         
         if found_errors:
-            print(f"   ❌ 에러 지표 발견:")
+            print(f"   [실패] 에러 지표 발견:")
             for error in found_errors:
                 print(f"     - {error}")
         
@@ -195,11 +195,11 @@ class BStoreLoginTester:
             popup_count = await notice_popup.count()
             
             if popup_count > 0:
-                print(f"   ✅ 안내 팝업 발견 ({popup_count}개)")
+                print(f"   [성공] 안내 팝업 발견 ({popup_count}개)")
                 
                 # 첫 번째 안내 팝업 클릭
                 await notice_popup.first.click()
-                print(f"   ✅ 안내 팝업 클릭 완료")
+                print(f"   [성공] 안내 팝업 클릭 완료")
                 
                 await self.page.wait_for_timeout(1000)
                 
@@ -209,18 +209,18 @@ class BStoreLoginTester:
                 
                 if ok_count > 0:
                     await ok_button.click()
-                    print(f"   ✅ OK 버튼 클릭 완료")
+                    print(f"   [성공] OK 버튼 클릭 완료")
                 else:
-                    print(f"   ⚠️  OK 버튼을 찾지 못했습니다")
+                    print(f"   [경고]  OK 버튼을 찾지 못했습니다")
                 
                 await self.page.wait_for_timeout(2000)
                 return True
             else:
-                print(f"   ℹ️  안내 팝업이 없습니다")
+                print(f"   [정보]  안내 팝업이 없습니다")
                 return True
                 
         except Exception as e:
-            print(f"   ⚠️  팝업 처리 중 오류 (무시하고 계속): {str(e)}")
+            print(f"   [경고]  팝업 처리 중 오류 (무시하고 계속): {str(e)}")
             return True
     
     async def take_screenshot(self, filename="b_store_login_test.png"):
@@ -243,9 +243,9 @@ class BStoreLoginTester:
                 await self.browser.close()
             if self.playwright:
                 await self.playwright.stop()
-            print("✅ 리소스 정리 완료")
+            print("[성공] 리소스 정리 완료")
         except Exception as e:
-            print(f"⚠️  리소스 정리 중 오류: {str(e)}")
+            print(f"[경고]  리소스 정리 중 오류: {str(e)}")
 
 
 async def test_b_store_login():
@@ -271,7 +271,7 @@ async def test_b_store_login():
         elements_ok = await tester.check_login_elements()
         
         if not elements_ok:
-            print("\n❌ 로그인 요소를 찾을 수 없습니다. 사이트 구조가 변경되었을 수 있습니다.")
+            print("\n[실패] 로그인 요소를 찾을 수 없습니다. 사이트 구조가 변경되었을 수 있습니다.")
             await tester.take_screenshot("b_store_login_elements_missing.png")
             return
         
@@ -279,7 +279,7 @@ async def test_b_store_login():
         login_ok = await tester.perform_login()
         
         if not login_ok:
-            print("\n❌ 로그인 수행에 실패했습니다.")
+            print("\n[실패] 로그인 수행에 실패했습니다.")
             await tester.take_screenshot("b_store_login_failed.png")
             return
         
@@ -296,20 +296,20 @@ async def test_b_store_login():
         print("\n" + "=" * 60)
         print("📋 테스트 결과 요약")
         print("=" * 60)
-        print(f"✅ 사이트 접속: 성공")
-        print(f"{'✅' if elements_ok else '❌'} 로그인 요소 확인: {'성공' if elements_ok else '실패'}")
-        print(f"{'✅' if login_ok else '❌'} 로그인 수행: {'성공' if login_ok else '실패'}")
-        print(f"{'✅' if result_ok else '⚠️ '} 로그인 결과: {'성공' if result_ok else '확인 필요'}")
+        print(f"[성공] 사이트 접속: 성공")
+        print(f"{'[성공]' if elements_ok else '[실패]'} 로그인 요소 확인: {'성공' if elements_ok else '실패'}")
+        print(f"{'[성공]' if login_ok else '[실패]'} 로그인 수행: {'성공' if login_ok else '실패'}")
+        print(f"{'[성공]' if result_ok else '[경고] '} 로그인 결과: {'성공' if result_ok else '확인 필요'}")
         
         if elements_ok and login_ok:
-            print(f"\n🎉 B 매장 로그인 테스트 완료!")
+            print(f"\n[완료] B 매장 로그인 테스트 완료!")
             if not headless:
                 input("\n브라우저 확인 후 Enter를 누르세요...")
         else:
-            print(f"\n⚠️  일부 단계에서 문제가 발생했습니다. 스크린샷을 확인해주세요.")
+            print(f"\n[경고]  일부 단계에서 문제가 발생했습니다. 스크린샷을 확인해주세요.")
         
     except Exception as e:
-        print(f"\n❌ 테스트 실행 중 오류 발생: {str(e)}")
+        print(f"\n[실패] 테스트 실행 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
         

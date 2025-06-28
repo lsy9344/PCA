@@ -7,29 +7,55 @@ import asyncio
 import re
 import logging
 from typing import Dict, List, Optional, Tuple
-from playwright.async_api import Page, Browser, Playwright
+from playwright.async_api import Page, Browser, Playwright, async_playwright
+
+from core.domain.repositories.store_repository import StoreRepository
+from core.domain.models.vehicle import Vehicle
+from core.domain.models.coupon import CouponHistory, CouponApplication
 
 
-class BStoreCrawler:
+class BStoreCrawler(StoreRepository):
     """B 매장 전용 크롤러 - 실제 테스트 검증된 버전"""
     
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, store_config, playwright_config, logger):
+        self.config = store_config
+        self.playwright_config = playwright_config
         self.store_id = "B"
-        self.user_id = config.login_username  # "215"
-        self.logger = logging.getLogger(__name__)
+        self.user_id = store_config.login_username  # "215"
+        self.logger = logger
+        
+        # 브라우저 관련 속성
+        self.playwright = None
+        self.browser = None
+        self.page = None
     
-    async def login(self, page: Page) -> bool:
+    async def _initialize_browser(self) -> None:
+        """브라우저 초기화"""
+        if self.browser is None:
+            self.playwright = await async_playwright().start()
+            self.browser = await self.playwright.chromium.launch(
+                headless=self.playwright_config.get('headless', False),
+                slow_mo=1000 if not self.playwright_config.get('headless', False) else 0
+            )
+            self.page = await self.browser.new_page()
+            
+            # 기본 타임아웃 설정
+            self.page.set_default_timeout(self.playwright_config.get('timeout', 30000))
+    
+    async def login(self) -> bool:
         """B 매장 로그인 (실제 검증된 셀렉터 사용)"""
         try:
+            # 브라우저 초기화
+            await self._initialize_browser()
+            
             # 로그인 페이지로 이동
-            await page.goto(self.config.website_url)
-            await page.wait_for_load_state('networkidle')
+            await self.page.goto(self.config.website_url)
+            await self.page.wait_for_load_state('networkidle')
             
             # 로그인 요소 찾기 (실제 동작하는 방식)
-            username_input = page.get_by_role('textbox', name='ID')
-            password_input = page.get_by_role('textbox', name='PASSWORD')
-            login_button = page.get_by_role('button', name='Submit')
+            username_input = self.page.get_by_role('textbox', name='ID')
+            password_input = self.page.get_by_role('textbox', name='PASSWORD')
+            login_button = self.page.get_by_role('button', name='Submit')
             
             # 로그인 정보 입력
             await username_input.fill(self.config.login_username)
@@ -37,26 +63,26 @@ class BStoreCrawler:
             await login_button.click()
             
             # 페이지 변화 대기
-            await page.wait_for_timeout(3000)
+            await self.page.wait_for_timeout(3000)
             
             # 로그인 성공 확인 (사용자 정보 표시)
-            success_indicator = page.locator('text=사용자')
+            success_indicator = self.page.locator('text=사용자')
             if await success_indicator.count() > 0:
-                self.logger.info("✅ B 매장 로그인 성공")
+                self.logger.info("[성공] B 매장 로그인 성공")
                 
                 # 안내 팝업 처리
-                await self._handle_popups(page)
+                await self._handle_popups(self.page)
                 
                 # 로그인 후 바로 검색 상태 유지 체크박스 설정
-                await self._ensure_search_state_checkbox(page)
+                await self._ensure_search_state_checkbox(self.page)
                 
                 return True
             else:
-                self.logger.error("❌ B 매장 로그인 실패 - 성공 지표를 찾을 수 없음")
+                self.logger.error("[실패] B 매장 로그인 실패 - 성공 지표를 찾을 수 없음")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ B 매장 로그인 중 오류: {str(e)}")
+            self.logger.error(f"[실패] B 매장 로그인 중 오류: {str(e)}")
             return False
     
     async def _handle_popups(self, page: Page):
@@ -69,65 +95,38 @@ class BStoreCrawler:
                 if await ok_button.count() > 0:
                     await ok_button.click()
                     await page.wait_for_timeout(1000)
-                    self.logger.info("✅ 안내 팝업 처리 완료")
+                    self.logger.info("[성공] 안내 팝업 처리 완료")
         except Exception as e:
-            self.logger.warning(f"⚠️ 팝업 처리 중 오류 (무시하고 계속): {str(e)}")
+            self.logger.warning(f"[경고] 팝업 처리 중 오류 (무시하고 계속): {str(e)}")
     
     async def _send_no_vehicle_notification(self, car_number: str):
-        """차량 검색 결과 없음 텔레그램 알림"""
+        """차량 검색 결과 없음 알림 (로그만)"""
         try:
-            self.logger.info(f"📱 텔레그램 알림 전송 준비 중... (차량번호: {car_number})")
-            
-            from datetime import datetime
-            from core.application.dto.automation_dto import ErrorContext
-            from infrastructure.notifications.telegram_adapter import TelegramAdapter
-            from infrastructure.config.config_manager import ConfigManager
-            
-            # 설정 및 텔레그램 어댑터 초기화
-            config_manager = ConfigManager()
-            telegram_config = config_manager.get_telegram_config()
-            self.logger.info(f"📞 텔레그램 설정 로드 완료: {telegram_config.get('bot_token', 'N/A')[:10]}...")
-            
-            telegram_adapter = TelegramAdapter(telegram_config, self.logger)
-            
-            # 에러 컨텍스트 생성
-            error_context = ErrorContext(
-                store_id="B",
-                vehicle_number=car_number,
-                error_step="차량검색",
-                error_message=f"🚗 B 매장에서 차량번호 '{car_number}' 검색 결과가 없습니다.\n\n차량번호를 다시 확인해 주세요.",
-                error_time=datetime.now()
-            )
-            
-            self.logger.info(f"📤 텔레그램 메시지 전송 시작...")
-            
-            # 텔레그램 알림 전송
-            await telegram_adapter.send_error_notification(error_context)
-            self.logger.info("✅ 차량 검색 결과 없음 텔레그램 알림 전송 완료")
+            self.logger.warning(f"[경고] B 매장에서 차량번호 '{car_number}' 검색 결과가 없습니다.")
+            self.logger.info("[정보] 차량번호를 다시 확인해 주세요.")
             
         except Exception as e:
-            self.logger.error(f"❌ 텔레그램 알림 전송 중 오류: {str(e)}")
-            # 스택 트레이스도 출력하여 디버깅에 도움
-            import traceback
-            self.logger.error(f"❌ 스택 트레이스: {traceback.format_exc()}")
+            self.logger.error(f"[실패] 알림 처리 중 오류: {str(e)}")
     
-    async def search_car(self, page: Page, car_number: str) -> bool:
+    async def search_vehicle(self, vehicle: Vehicle) -> bool:
         """차량 검색"""
         try:
+            car_number = vehicle.number
+            
             # 차량번호 입력 (실제 동작하는 방식)
-            car_input = page.get_by_role('textbox', name='차량번호')
+            car_input = self.page.get_by_role('textbox', name='차량번호')
             if await car_input.count() == 0:
                 raise Exception("차량번호 입력란을 찾을 수 없음")
             
             await car_input.fill(car_number)
             
             # 검색 버튼 클릭
-            search_button = page.get_by_role('button', name='검색')
+            search_button = self.page.get_by_role('button', name='검색')
             if await search_button.count() == 0:
                 raise Exception("검색 버튼을 찾을 수 없음")
             
             await search_button.click()
-            await page.wait_for_timeout(2000)
+            await self.page.wait_for_timeout(2000)
             
             # 검색 결과 확인 - 다양한 형태의 팝업 감지
             no_result_patterns = [
@@ -140,9 +139,9 @@ class BStoreCrawler:
             ]
             
             for pattern in no_result_patterns:
-                no_result = page.locator(pattern)
+                no_result = self.page.locator(pattern)
                 if await no_result.count() > 0:
-                    self.logger.warning(f"⚠️ 차량번호 '{car_number}' 검색 결과 없음 팝업 감지")
+                    self.logger.warning(f"[경고] 차량번호 '{car_number}' 검색 결과 없음 팝업 감지")
                     
                     # 팝업 닫기 버튼들 시도
                     close_buttons = [
@@ -157,67 +156,80 @@ class BStoreCrawler:
                     ]
                     
                     for close_button_selector in close_buttons:
-                        close_button = page.locator(close_button_selector)
+                        close_button = self.page.locator(close_button_selector)
                         if await close_button.count() > 0:
                             await close_button.click()
-                            await page.wait_for_timeout(1000)
-                            self.logger.info("✅ 검색 결과 없음 팝업 닫기 완료")
+                            await self.page.wait_for_timeout(1000)
+                            self.logger.info("[성공] 검색 결과 없음 팝업 닫기 완료")
                             break
                     
-                    # 텔레그램 알림 전송 및 프로세스 종료
-                    self.logger.info("📱 텔레그램 알림 전송 시작...")
+                    # 알림 및 프로세스 종료
                     await self._send_no_vehicle_notification(car_number)
-                    self.logger.info(f"ℹ️ 차량번호 '{car_number}' 검색 결과 없음 - 프로세스 종료")
+                    self.logger.info(f"[정보] 차량번호 '{car_number}' 검색 결과 없음 - 프로세스 종료")
                     return False
             
             # 검색 성공 시 차량 선택 (구현 필요시 추가)
-            self.logger.info(f"✅ 차량번호 '{car_number}' 검색 성공")
+            self.logger.info(f"[성공] 차량번호 '{car_number}' 검색 성공")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ 차량 검색 중 오류: {str(e)}")
+            self.logger.error(f"[실패] 차량 검색 중 오류: {str(e)}")
             return False
     
-    async def get_coupon_history(self, page: Page) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int]]:
+    async def get_coupon_history(self, vehicle: Vehicle) -> CouponHistory:
         """
         쿠폰 이력 조회 - B 매장 전용 구현 (현재 페이지에서만 처리)
         
         Returns:
-            Tuple[my_history, total_history, discount_info]
-            - my_history: 우리 매장 할인 내역 (등록자가 '215'인 경우)
-            - total_history: 전체 할인 내역 (모든 등록자)
-            - discount_info: 보유 쿠폰 정보 (남은잔여량 기반 계산)
+            CouponHistory: 쿠폰 이력 정보
         """
         try:
             my_history = {}
             total_history = {}
             discount_info = {}
             
+            # B 매장 특수 사항: 무료 쿠폰은 항상 보유되어 있음
+            discount_info['무료 1시간할인'] = {'car': 999, 'total': 999}
+            self.logger.info("[성공] B 매장 무료 쿠폰은 항상 보유: 999개")
+            
             # 현재 페이지에서 남은잔여량 확인
-            remaining_amount_text = await self._check_remaining_amount_on_current_page(page)
+            remaining_amount_text = await self._check_remaining_amount_on_current_page(self.page)
             if remaining_amount_text:
                 # 현재 페이지에서 모든 처리 완료
                 self._parse_remaining_amount(remaining_amount_text, discount_info)
-                self.logger.info(f"✅ 현재 페이지에서 남은잔여량 확인: {remaining_amount_text}")
+                self.logger.info(f"[성공] 현재 페이지에서 남은잔여량 확인: {remaining_amount_text}")
             else:
-                self.logger.info("ℹ️ 현재 페이지에서 남은잔여량 정보를 찾을 수 없음")
+                self.logger.info("[정보] 현재 페이지에서 남은잔여량 정보를 찾을 수 없음")
                 # 기본값 설정 (보유 쿠폰 없음으로 가정)
-                discount_info['PAID_30MIN'] = 0
+                paid_coupon_name = "유료 30분할인 (판매 : 300 )"
+                discount_info[paid_coupon_name] = {'car': 0, 'total': 0}
             
             # 할인내역 테이블 분석
-            await self._analyze_discount_history(page, my_history, total_history)
+            await self._analyze_discount_history(self.page, my_history, total_history)
             
             # A 매장과 동일한 포맷으로 로그 기록
-            self.logger.info(f"📊 B 매장 쿠폰 현황 분석:")
-            self.logger.info(f"   💰 현재 보유 쿠폰: {discount_info}")
-            self.logger.info(f"   🏪 우리 매장에서 적용한 쿠폰: {my_history}")
-            self.logger.info(f"   🌍 총 적용 쿠폰 (전체): {total_history}")
+            self.logger.info(f"[분석] B 매장 쿠폰 현황 분석:")
+            self.logger.info(f"   [보유] 현재 보유 쿠폰: {discount_info}")
+            self.logger.info(f"   [매장] 우리 매장에서 적용한 쿠폰: {my_history}")
+            self.logger.info(f"   [전체] 총 적용 쿠폰 (전체): {total_history}")
             
-            return my_history, total_history, discount_info
+            return CouponHistory(
+                store_id=self.store_id,
+                vehicle_id=vehicle.number,
+                my_history=my_history,
+                total_history=total_history,
+                available_coupons=discount_info
+            )
             
         except Exception as e:
-            self.logger.error(f"❌ B 매장 쿠폰 이력 조회 중 오류: {str(e)}")
-            return {}, {}, {}
+            self.logger.error(f"[실패] B 매장 쿠폰 이력 조회 중 오류: {str(e)}")
+            return CouponHistory(
+                store_id=self.store_id,
+                vehicle_id=vehicle.number,
+                my_history={},
+                total_history={},
+                available_coupons={}
+            )
     
     async def _check_remaining_amount_on_current_page(self, page: Page) -> Optional[str]:
         """현재 페이지에서 남은잔여량 확인"""
@@ -237,14 +249,14 @@ class BStoreCrawler:
                     parent = elements.first.locator('..')
                     text = await parent.text_content()
                     if text and "원" in text:
-                        self.logger.info(f"✅ 현재 페이지에서 남은잔여량 발견: {text}")
+                        self.logger.info(f"[성공] 현재 페이지에서 남은잔여량 발견: {text}")
                         return text
             
-            self.logger.info("ℹ️ 현재 페이지에 남은잔여량 정보 없음")
+            self.logger.info("[정보] 현재 페이지에 남은잔여량 정보 없음")
             return None
             
         except Exception as e:
-            self.logger.warning(f"⚠️ 현재 페이지 남은잔여량 확인 중 오류: {str(e)}")
+            self.logger.warning(f"[경고] 현재 페이지 남은잔여량 확인 중 오류: {str(e)}")
             return None
     
     def _parse_remaining_amount(self, amount_text: str, discount_info: Dict[str, int]):
@@ -256,12 +268,15 @@ class BStoreCrawler:
                 amount = int(amount_match.group(1).replace(',', ''))
                 # 300원당 1개 쿠폰 (유료 30분할인)
                 paid_30min_count = amount // 300
-                discount_info['PAID_30MIN'] = paid_30min_count
-                self.logger.info(f"✅ 남은잔여량: {amount}원 → 유료 30분할인 {paid_30min_count}개")
+                
+                # 실제 크롤링에서 나타나는 쿠폰 이름 사용
+                paid_coupon_name = "유료 30분할인 (판매 : 300 )"
+                discount_info[paid_coupon_name] = {'car': paid_30min_count, 'total': paid_30min_count}
+                self.logger.info(f"[성공] 남은잔여량: {amount}원 → {paid_coupon_name} {paid_30min_count}개")
             else:
-                self.logger.warning(f"⚠️ 남은잔여량 숫자 추출 실패: {amount_text}")
+                self.logger.warning(f"[경고] 남은잔여량 숫자 추출 실패: {amount_text}")
         except Exception as e:
-            self.logger.error(f"❌ 남은잔여량 파싱 중 오류: {str(e)}")
+            self.logger.error(f"[실패] 남은잔여량 파싱 중 오류: {str(e)}")
     
     async def _get_available_coupons(self, page: Page, discount_info: Dict[str, int]):
         """보유 쿠폰 수량 조회 (남은잔여량 기반)"""
@@ -284,15 +299,16 @@ class BStoreCrawler:
                     amount = int(amount_match.group(1).replace(',', ''))
                     # 300원당 1개 쿠폰 (유료 30분할인)
                     paid_30min_count = amount // 300
-                    discount_info['PAID_30MIN'] = paid_30min_count
-                    self.logger.info(f"✅ 남은잔여량: {amount}원 → 유료 30분할인 {paid_30min_count}개")
+                    paid_coupon_name = "유료 30분할인 (판매 : 300 )"
+                    discount_info[paid_coupon_name] = {'car': paid_30min_count, 'total': paid_30min_count}
+                    self.logger.info(f"[성공] 남은잔여량: {amount}원 → {paid_coupon_name} {paid_30min_count}개")
                 else:
-                    self.logger.warning(f"⚠️ 남은잔여량 숫자 추출 실패: {amount_text}")
+                    self.logger.warning(f"[경고] 남은잔여량 숫자 추출 실패: {amount_text}")
             else:
-                self.logger.warning("⚠️ 남은잔여량 정보를 찾을 수 없음")
+                self.logger.warning("[경고] 남은잔여량 정보를 찾을 수 없음")
                 
         except Exception as e:
-            self.logger.error(f"❌ 보유 쿠폰 수량 조회 중 오류: {str(e)}")
+            self.logger.error(f"[실패] 보유 쿠폰 수량 조회 중 오류: {str(e)}")
     
     async def _ensure_search_state_checkbox(self, page: Page):
         """검색 상태 유지 체크박스 확인 및 활성화"""
@@ -321,28 +337,28 @@ class BStoreCrawler:
                         else:
                             continue
                     
-                    self.logger.info(f"🔍 검색 상태 유지 체크박스 발견 - 현재 상태: {'체크됨' if is_checked else '체크되지 않음'}")
+                    self.logger.info(f"[검색] 검색 상태 유지 체크박스 발견 - 현재 상태: {'체크됨' if is_checked else '체크되지 않음'}")
                     
                     if not is_checked:
                         await checkbox_element.click()
                         await page.wait_for_timeout(500)
-                        self.logger.info("✅ 검색 상태 유지 체크박스 활성화 완료")
+                        self.logger.info("[성공] 검색 상태 유지 체크박스 활성화 완료")
                     else:
-                        self.logger.info("ℹ️ 검색 상태 유지 체크박스 이미 활성화됨")
+                        self.logger.info("[정보] 검색 상태 유지 체크박스 이미 활성화됨")
                     
                     checkbox_found = True
                     break
             
             if not checkbox_found:
-                self.logger.warning("⚠️ 검색 상태 유지 체크박스를 찾을 수 없음")
+                self.logger.warning("[경고] 검색 상태 유지 체크박스를 찾을 수 없음")
                 
         except Exception as e:
-            self.logger.warning(f"⚠️ 검색 상태 유지 체크박스 처리 중 오류: {str(e)}")
+            self.logger.warning(f"[경고] 검색 상태 유지 체크박스 처리 중 오류: {str(e)}")
 
     async def _analyze_discount_history(self, page: Page, my_history: Dict[str, int], total_history: Dict[str, int]):
         """할인등록현황 테이블 분석 - 사용자가 제공한 HTML 구조 기반으로 정확히 파싱"""
         try:
-            self.logger.info("📊 할인 내역 테이블 분석 시작")
+            self.logger.info("[분석] 할인 내역 테이블 분석 시작")
             
             # 사용자 제공 HTML을 기반으로 할인내역 테이블 찾기
             # 클래스 "obj_row20px"와 "cellpadding=0 cellspacing=0"을 가진 테이블 찾기
@@ -353,7 +369,7 @@ class BStoreCrawler:
                 # 대안: 할인 관련 키워드가 있는 모든 테이블 검색
                 all_tables = page.locator('table')
                 total_table_count = await all_tables.count()
-                self.logger.info(f"📋 페이지 전체 테이블 수: {total_table_count}")
+                self.logger.info(f"[분석] 페이지 전체 테이블 수: {total_table_count}")
                 
                 for i in range(total_table_count):
                     table = all_tables.nth(i)
@@ -361,11 +377,11 @@ class BStoreCrawler:
                     if "할인값" in table_text and "등록자" in table_text:
                         discount_tables = table
                         table_count = 1
-                        self.logger.info(f"✅ 할인내역 테이블 발견: 테이블 {i}")
+                        self.logger.info(f"[성공] 할인내역 테이블 발견: 테이블 {i}")
                         break
             
             if table_count == 0:
-                self.logger.warning("⚠️ 할인내역 테이블을 찾을 수 없음")
+                self.logger.warning("[경고] 할인내역 테이블을 찾을 수 없음")
                 return
             
             # 할인내역 테이블 파싱
@@ -374,7 +390,7 @@ class BStoreCrawler:
             # tbody의 모든 행 가져오기
             tbody_rows = current_table.locator('tbody tr')
             tbody_row_count = await tbody_rows.count()
-            self.logger.info(f"📊 tbody에서 발견된 행 수: {tbody_row_count}")
+            self.logger.info(f"[분석] tbody에서 발견된 행 수: {tbody_row_count}")
             
             data_row_count = 0
             
@@ -396,7 +412,7 @@ class BStoreCrawler:
                         
                         # 헤더 행 스킵 (첫 번째 셀이 "순번"인 경우)
                         if cell_contents[0] == "순번" or "할인값" in cell_contents:
-                            self.logger.info(f"📋 헤더 행 스킵: {cell_contents}")
+                            self.logger.info(f"[분석] 헤더 행 스킵: {cell_contents}")
                             continue
                         
                         # 실제 데이터가 있는 행인지 확인 (두 번째 셀에 "할인"이 포함되어야 함)
@@ -409,7 +425,7 @@ class BStoreCrawler:
                             registrant = cell_contents[2] if len(cell_contents) > 2 else ""
                             time_text = cell_contents[3] if len(cell_contents) > 3 else ""
                             
-                            self.logger.info(f"📋 데이터 행 {data_row_count}: 순번=[{sequence}] 할인값=[{discount_value}] 등록자=[{registrant}] 시간=[{time_text}]")
+                            self.logger.info(f"[분석] 데이터 행 {data_row_count}: 순번=[{sequence}] 할인값=[{discount_value}] 등록자=[{registrant}] 시간=[{time_text}]")
                             
                             # 쿠폰 타입 추출
                             coupon_type = self._extract_coupon_type(discount_value)
@@ -423,22 +439,22 @@ class BStoreCrawler:
                                 # 등록자가 우리 매장 ID(215)와 일치하는지 확인
                                 if registrant_id == self.user_id:
                                     my_history[coupon_type] = my_history.get(coupon_type, 0) + 1
-                                    self.logger.info(f"   🏪 우리 매장 할인: {coupon_type} - {registrant} ({time_text})")
+                                    self.logger.info(f"   [매장] 우리 매장 할인: {coupon_type} - {registrant} ({time_text})")
                                 else:
-                                    self.logger.info(f"   🌍 타 매장 할인: {coupon_type} - {registrant} ({time_text})")
+                                    self.logger.info(f"   [전체] 타 매장 할인: {coupon_type} - {registrant} ({time_text})")
                             else:
-                                self.logger.warning(f"⚠️ 알 수 없는 할인 타입: {discount_value}")
+                                self.logger.warning(f"[경고] 알 수 없는 할인 타입: {discount_value}")
                         else:
-                            self.logger.debug(f"📋 비할인 행 스킵: {cell_contents}")
+                            self.logger.debug(f"[분석] 비할인 행 스킵: {cell_contents}")
                         
                 except Exception as e:
-                    self.logger.warning(f"⚠️ 행 {row_idx} 처리 중 오류: {str(e)}")
+                    self.logger.warning(f"[경고] 행 {row_idx} 처리 중 오류: {str(e)}")
                     continue
             
-            self.logger.info(f"📊 할인 내역 분석 완료: 총 {data_row_count}건의 할인 발견")
+            self.logger.info(f"[분석] 할인 내역 분석 완료: 총 {data_row_count}건의 할인 발견")
             
         except Exception as e:
-            self.logger.error(f"❌ 할인 내역 테이블 분석 중 오류: {str(e)}")
+            self.logger.error(f"[실패] 할인 내역 테이블 분석 중 오류: {str(e)}")
     
     def _extract_coupon_type(self, discount_value: str) -> Optional[str]:
         """할인값에서 쿠폰 타입 추출"""
@@ -451,62 +467,73 @@ class BStoreCrawler:
         elif "유료 24시간할인" in discount_value:
             return "PAID_24HOUR"
         else:
-            self.logger.warning(f"⚠️ 알 수 없는 할인 타입: {discount_value}")
+            self.logger.warning(f"[경고] 알 수 없는 할인 타입: {discount_value}")
             return None
     
-    async def apply_coupons(self, page: Page, coupons_to_apply: Dict[str, int]) -> bool:
+    async def apply_coupons(self, applications: List[CouponApplication]) -> bool:
         """
         쿠폰 적용 - B 매장 전용 구현
         실제 차량이 선택된 상황에서 쿠폰 적용
         """
         try:
-            self.logger.info(f"🎫 B 매장 쿠폰 적용 시작: {coupons_to_apply}")
+            # applications를 딕셔너리로 변환
+            coupons_to_apply = {}
+            for app in applications:
+                coupons_to_apply[app.coupon_name] = app.count
+            
+            self.logger.info(f"[쿠폰] B 매장 쿠폰 적용 시작: {coupons_to_apply}")
+            
+            # 디버그: 쿠폰 키 확인
+            self.logger.info(f"[디버그] 전달받은 쿠폰 키들: {list(coupons_to_apply.keys())}")
             
             total_applied = 0
             
-            # 1. 무료 1시간할인 적용
-            free_1hour_count = coupons_to_apply.get('FREE_1HOUR', 0)
-            if free_1hour_count > 0:
-                for i in range(free_1hour_count):
-                    success = await self._apply_single_coupon(page, 'FREE_1HOUR', i + 1)
-                    if success:
-                        total_applied += 1
-                        self.logger.info(f"✅ 무료 1시간할인 {i + 1}개 적용 완료")
+            # 각 쿠폰 적용 처리 (모든 쿠폰에 대해 동적으로 처리)
+            for coupon_name, count in coupons_to_apply.items():
+                self.logger.info(f"[디버그] 쿠폰 '{coupon_name}' 적용 시작: {count}개")
+                
+                if count > 0:
+                    # 쿠폰 이름에 따른 타입 결정
+                    if '무료' in coupon_name and '1시간' in coupon_name:
+                        coupon_type = 'FREE_1HOUR'
+                        coupon_display_name = '무료 1시간할인'
+                    elif '유료' in coupon_name and '30분' in coupon_name:
+                        coupon_type = 'PAID_30MIN'
+                        coupon_display_name = '유료 30분할인'
                     else:
-                        self.logger.error(f"❌ 무료 1시간할인 {i + 1}개 적용 실패")
-                        return False
+                        self.logger.warning(f"[경고] 알 수 없는 쿠폰 타입: {coupon_name}")
+                        continue
+                    
+                    # 쿠폰 개수만큼 반복 적용
+                    for i in range(count):
+                        success = await self._apply_single_coupon(self.page, coupon_type, i + 1)
+                        if success:
+                            total_applied += 1
+                            self.logger.info(f"[성공] {coupon_display_name} {i + 1}개 적용 완료")
+                        else:
+                            self.logger.error(f"[실패] {coupon_display_name} {i + 1}개 적용 실패")
+                            return False
             
-            # 2. 유료 30분할인 적용
-            paid_30min_count = coupons_to_apply.get('PAID_30MIN', 0)
-            if paid_30min_count > 0:
-                for i in range(paid_30min_count):
-                    success = await self._apply_single_coupon(page, 'PAID_30MIN', i + 1)
-                    if success:
-                        total_applied += 1
-                        self.logger.info(f"✅ 유료 30분할인 {i + 1}개 적용 완료")
-                    else:
-                        self.logger.error(f"❌ 유료 30분할인 {i + 1}개 적용 실패")
-                        return False
-            
+            self.logger.info(f"[디버그] 최종 total_applied 값: {total_applied}")
             if total_applied > 0:
-                self.logger.info(f"🎉 B 매장 쿠폰 적용 완료: 총 {total_applied}개")
+                self.logger.info(f"[완료] B 매장 쿠폰 적용 완료: 총 {total_applied}개")
                 return True
             else:
-                self.logger.info("ℹ️ 적용할 쿠폰이 없음")
-                return True
+                self.logger.info("[정보] 적용할 쿠폰이 없음")
+                return False  # 실제로 적용된 쿠폰이 없으므로 False 반환
             
         except Exception as e:
-            self.logger.error(f"❌ B 매장 쿠폰 적용 중 오류: {str(e)}")
+            self.logger.error(f"[실패] B 매장 쿠폰 적용 중 오류: {str(e)}")
             return False
     
     async def _apply_single_coupon(self, page: Page, coupon_type: str, sequence: int) -> bool:
         """단일 쿠폰 적용"""
         try:
-            self.logger.info(f"🎫 {coupon_type} 쿠폰 적용 시작 (순서: {sequence})")
+            self.logger.info(f"[쿠폰] {coupon_type} 쿠폰 적용 시작 (순서: {sequence})")
             
             # 현재 할인내역 테이블의 행 수를 기록 (적용 전)
             current_rows = await self._count_discount_rows(page)
-            self.logger.info(f"📊 적용 전 할인내역 행 수: {current_rows}")
+            self.logger.info(f"[분석] 적용 전 할인내역 행 수: {current_rows}")
             
             # 쿠폰 타입에 따른 링크 클릭
             if coupon_type == 'FREE_1HOUR':
@@ -514,9 +541,9 @@ class BStoreCrawler:
                 discount_link = page.locator('text=무료 1시간할인')
                 if await discount_link.count() > 0:
                     await discount_link.click()
-                    self.logger.info("📱 무료 1시간할인 선택 완료")
+                    self.logger.info("[액션] 무료 1시간할인 선택 완료")
                 else:
-                    self.logger.error("❌ 무료 1시간할인 링크를 찾을 수 없음")
+                    self.logger.error("[실패] 무료 1시간할인 링크를 찾을 수 없음")
                     return False
                     
             elif coupon_type == 'PAID_30MIN':
@@ -524,9 +551,9 @@ class BStoreCrawler:
                 discount_link = page.locator('text=유료 30분할인 (판매 : 300 )')
                 if await discount_link.count() > 0:
                     await discount_link.click()
-                    self.logger.info("📱 유료 30분할인 선택 완료")
+                    self.logger.info("[액션] 유료 30분할인 선택 완료")
                 else:
-                    self.logger.error("❌ 유료 30분할인 링크를 찾을 수 없음")
+                    self.logger.error("[실패] 유료 30분할인 링크를 찾을 수 없음")
                     return False
             
             # 짧은 대기 후 성공 팝업 처리
@@ -535,20 +562,20 @@ class BStoreCrawler:
             # 성공/확인 팝업 처리 - 페이지 이동 방지
             success = await self._handle_apply_popups_without_navigation(page)
             if not success:
-                self.logger.error("❌ 쿠폰 적용 팝업 처리 실패")
+                self.logger.error("[실패] 쿠폰 적용 팝업 처리 실패")
                 return False
             
             # 할인내역 테이블 업데이트 확인 (최대 5초 대기)
             updated = await self._wait_for_discount_table_update(page, current_rows)
             if updated:
-                self.logger.info("✅ 할인내역 테이블 업데이트 확인 완료")
+                self.logger.info("[성공] 할인내역 테이블 업데이트 확인 완료")
                 return True
             else:
-                self.logger.warning("⚠️ 할인내역 테이블 업데이트 확인 실패, 하지만 계속 진행")
+                self.logger.warning("[경고] 할인내역 테이블 업데이트 확인 실패, 하지만 계속 진행")
                 return True  # 쿠폰이 적용되었을 가능성이 높으므로 성공으로 처리
             
         except Exception as e:
-            self.logger.error(f"❌ {coupon_type} 쿠폰 적용 중 오류: {str(e)}")
+            self.logger.error(f"[실패] {coupon_type} 쿠폰 적용 중 오류: {str(e)}")
             return False
     
     async def _handle_apply_popups_without_navigation(self, page: Page) -> bool:
@@ -567,7 +594,7 @@ class BStoreCrawler:
                 for message_locator in success_messages:
                     message = page.locator(message_locator)
                     if await message.count() > 0:
-                        self.logger.info("✅ 쿠폰 적용 성공 메시지 확인")
+                        self.logger.info("[성공] 쿠폰 적용 성공 메시지 확인")
                         popup_found = True
                         
                         # OK 버튼 클릭 - 현재 페이지 유지하도록 처리
@@ -575,7 +602,7 @@ class BStoreCrawler:
                         if await ok_button.count() > 0:
                             await ok_button.click()
                             await page.wait_for_timeout(300)  # 짧은 대기
-                            self.logger.info("📱 성공 팝업 닫기 완료")
+                            self.logger.info("[액션] 성공 팝업 닫기 완료")
                         break
                 
                 if popup_found:
@@ -584,12 +611,12 @@ class BStoreCrawler:
                 await page.wait_for_timeout(500)  # 0.5초 대기
             
             if not popup_found:
-                self.logger.warning("⚠️ 성공 팝업을 찾지 못했지만 계속 진행")
+                self.logger.warning("[경고] 성공 팝업을 찾지 못했지만 계속 진행")
             
             return True
             
         except Exception as e:
-            self.logger.warning(f"⚠️ 쿠폰 적용 팝업 처리 중 오류: {str(e)}")
+            self.logger.warning(f"[경고] 쿠폰 적용 팝업 처리 중 오류: {str(e)}")
             return False
 
     async def _count_discount_rows(self, page: Page) -> int:
@@ -605,7 +632,7 @@ class BStoreCrawler:
             return data_count
             
         except Exception as e:
-            self.logger.warning(f"⚠️ 할인내역 행 수 계산 중 오류: {str(e)}")
+            self.logger.warning(f"[경고] 할인내역 행 수 계산 중 오류: {str(e)}")
             return 0
 
     async def _wait_for_discount_table_update(self, page: Page, previous_count: int) -> bool:
@@ -617,7 +644,7 @@ class BStoreCrawler:
                 
                 current_count = await self._count_discount_rows(page)
                 if current_count > previous_count:
-                    self.logger.info(f"✅ 할인내역 업데이트 감지: {previous_count} → {current_count}")
+                    self.logger.info(f"[성공] 할인내역 업데이트 감지: {previous_count} → {current_count}")
                     return True
                 
                 # 남은잔여량도 확인하여 변화가 있는지 체크
@@ -626,14 +653,14 @@ class BStoreCrawler:
                     current_amount = await remaining_element.text_content()
                     if current_amount and "5,800" in current_amount or "5,500" in current_amount:
                         # 금액이 변경되었으면 적용된 것으로 판단
-                        self.logger.info(f"✅ 남은잔여량 변화 감지: {current_amount}")
+                        self.logger.info(f"[성공] 남은잔여량 변화 감지: {current_amount}")
                         return True
             
-            self.logger.warning("⚠️ 할인내역 테이블 업데이트 확인 시간 초과")
+            self.logger.warning("[경고] 할인내역 테이블 업데이트 확인 시간 초과")
             return False
             
         except Exception as e:
-            self.logger.warning(f"⚠️ 할인내역 테이블 업데이트 확인 중 오류: {str(e)}")
+            self.logger.warning(f"[경고] 할인내역 테이블 업데이트 확인 중 오류: {str(e)}")
             return False
 
     async def _handle_apply_popups(self, page: Page):
@@ -650,15 +677,51 @@ class BStoreCrawler:
             for message_locator in success_messages:
                 message = page.locator(message_locator)
                 if await message.count() > 0:
-                    self.logger.info("✅ 쿠폰 적용 성공 메시지 확인")
+                    self.logger.info("[성공] 쿠폰 적용 성공 메시지 확인")
                     
                     # OK 버튼 클릭
                     ok_button = page.locator('text=OK')
                     if await ok_button.count() > 0:
                         await ok_button.click()
                         await page.wait_for_timeout(1000)
-                        self.logger.info("📱 성공 팝업 닫기 완료")
+                        self.logger.info("[액션] 성공 팝업 닫기 완료")
                     break
             
         except Exception as e:
-            self.logger.warning(f"⚠️ 쿠폰 적용 팝업 처리 중 오류 (무시하고 계속): {str(e)}") 
+            self.logger.warning(f"[경고] 쿠폰 적용 팝업 처리 중 오류 (무시하고 계속): {str(e)}")
+
+    async def cleanup(self) -> None:
+        """리소스 정리"""
+        try:
+            # 페이지 정리
+            if self.page:
+                try:
+                    await self.page.close()
+                    self.logger.info("페이지 정리 완료")
+                except Exception:
+                    pass
+                finally:
+                    self.page = None
+            
+            # 브라우저 정리
+            if self.browser:
+                try:
+                    await self.browser.close()
+                    self.logger.info("브라우저 정리 완료")
+                except Exception:
+                    pass
+                finally:
+                    self.browser = None
+            
+            # Playwright 정리
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                    self.logger.info("Playwright 정리 완료")
+                except Exception:
+                    pass
+                finally:
+                    self.playwright = None
+                    
+        except Exception as e:
+            self.logger.warning(f"리소스 정리 중 오류: {str(e)}") 
