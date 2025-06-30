@@ -14,8 +14,10 @@ class BDiscountRule:
         self.logger = logging.getLogger(__name__)
         # B 매장 쿠폰 타입 정의 (실제 크롤링 결과와 일치)
         self.coupon_types = {
-            'PAID_30MIN': '유료 30분할인',    # 남은잔여량 ÷ 300
+            'FREE_30MIN': '무료 30분할인',    # 무료 30분 할인
             'FREE_1HOUR': '무료 1시간할인',   # 무제한 사용 가능
+            'PAID_30MIN': '유료 30분할인',    # 남은잔여량 ÷ 300
+            'PAID_1HOUR': '유료 1시간할인',   # 유료 1시간 할인
             'PAID_24HOUR': '유료 24시간할인'  # 필요시 추가
         }
     
@@ -54,12 +56,19 @@ class BDiscountRule:
                 target_hours = 2  # 주말 2시간
                 self.logger.info("📅 주말 - 목표 할인: 2시간")
             
-            # 현재 적용된 할인 계산
+            # 현재 적용된 할인 계산 (모든 쿠폰 타입 포함)
+            current_free_30min = my_history.get('FREE_30MIN', 0)
             current_free_1hour = my_history.get('FREE_1HOUR', 0)
             current_paid_30min = my_history.get('PAID_30MIN', 0)
-            current_hours = current_free_1hour + (current_paid_30min * 0.5)
+            current_paid_1hour = my_history.get('PAID_1HOUR', 0)
             
-            self.logger.info(f"📊 현재 적용된 할인: {current_hours}시간 (무료 1시간 {current_free_1hour}개 + 유료 30분 {current_paid_30min}개)")
+            current_hours = (current_free_30min * 0.5) + current_free_1hour + (current_paid_30min * 0.5) + current_paid_1hour
+            
+            self.logger.info(f"📊 현재 적용된 할인: {current_hours}시간")
+            self.logger.info(f"   - 무료 30분: {current_free_30min}개")
+            self.logger.info(f"   - 무료 1시간: {current_free_1hour}개") 
+            self.logger.info(f"   - 유료 30분: {current_paid_30min}개")
+            self.logger.info(f"   - 유료 1시간: {current_paid_1hour}개")
             
             if current_hours >= target_hours:
                 self.logger.info("✅ 이미 목표 할인 시간 달성")
@@ -110,9 +119,13 @@ class BDiscountRule:
         
         # 각 쿠폰 타입별 할인 시간 계산
         for coupon_type, count in my_history.items():
-            if coupon_type == 'PAID_30MIN':
+            if coupon_type == 'FREE_30MIN':
                 total_minutes += count * 30
             elif coupon_type == 'FREE_1HOUR':
+                total_minutes += count * 60
+            elif coupon_type == 'PAID_30MIN':
+                total_minutes += count * 30
+            elif coupon_type == 'PAID_1HOUR':
                 total_minutes += count * 60
             elif coupon_type == 'PAID_24HOUR':
                 total_minutes += count * 24 * 60

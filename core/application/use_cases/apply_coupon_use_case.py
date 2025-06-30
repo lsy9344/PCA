@@ -66,12 +66,12 @@ class ApplyCouponUseCase:
             current_datetime = datetime.now()
             is_weekday = DateUtils.is_weekday(current_datetime)
             
-            # 개발 환경에서만 상세 정보 로그
+            # 개발 환경에서만 최소한의 정보 로그
             if os.getenv('ENVIRONMENT', 'development') != 'production':
-                self._logger.info(f"[{request.store_id}] discount_info: {discount_info}")
-                self._logger.info(f"[{request.store_id}] my_history: {my_history}")
-                self._logger.info(f"[{request.store_id}] total_history: {total_history}")
-                self._logger.info(f"[{request.store_id}] is_weekday: {is_weekday}")
+                my_count = sum(my_history.values()) if my_history else 0
+                total_count = sum(total_history.values()) if total_history else 0
+                if my_count > 0 or total_count > 0:
+                    self._logger.info(f"[{request.store_id}] 쿠폰 이력: 우리 매장 {my_count}건, 전체 {total_count}건")
 
             # 6. 사용 가능한 쿠폰 개수 계산
             available_coupons = {}
@@ -85,12 +85,6 @@ class ApplyCouponUseCase:
                 available_coupons=available_coupons,
                 is_weekday=is_weekday
             )
-
-            # 개발 환경에서만 계산 결과 상세 로그
-            if os.getenv('ENVIRONMENT', 'development') != 'production':
-                self._logger.info(f"[{request.store_id}] calculate_required_coupons 성공! 결과: {len(applications)}개")
-                for app in applications:
-                    self._logger.info(f"[{request.store_id}] 계산 결과: {app.coupon_name} {app.count}개")
 
             # 8. 쿠폰 적용 (적용할 쿠폰이 있는 경우에만 로그)
             actually_applied_coupons = []

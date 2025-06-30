@@ -131,12 +131,12 @@ class TestBDiscountCalculator:
         return BDiscountCalculator(b_discount_policy, b_coupon_rules)
     
     def test_weekday_calculation_with_30min_doubling(self, b_calculator, capsys):
-        """평일 계산 - 30분 쿠폰 2배 보정 테스트"""
+        """평일 계산 - @/rules 지침에 따른 시간 기반 부족분 계산 테스트"""
         my_history = {}
         total_history = {}
         available_coupons = {
             "무료 1시간할인": 999,
-            "유료 30분할인 (판매 : 300 )": 100
+            "유료 30분할인 (판매 : 300 )": 50
         }
         
         applications = b_calculator.calculate_required_coupons(
@@ -146,26 +146,57 @@ class TestBDiscountCalculator:
             is_weekday=True
         )
         
-        # 결과 검증
-        assert len(applications) == 2
-        
-        # 무료 쿠폰은 1개 (보정 없음)
+        # @/rules 지침: 평일 3시간 = 무료 1시간 + 유료 2시간
+        # B 매장: 유료 2시간 = 4개 30분 쿠폰
         free_app = next((app for app in applications if "무료" in app.coupon_name), None)
-        assert free_app is not None
-        assert free_app.count == 1
-        
-        # 30분 쿠폰은 2배 보정 적용 (기본 2개 → 4개)
         paid_app = next((app for app in applications if "30분" in app.coupon_name), None)
+        
+        assert free_app is not None
+        assert free_app.count == 1  # 무료 1시간
+        
         assert paid_app is not None
-        assert paid_app.count == 4  # 2배 보정
+        assert paid_app.count == 4  # 유료 2시간 = 4개 30분 쿠폰
         
         # 콘솔 출력 확인
         captured = capsys.readouterr()
-        assert "30분쿠폰" in captured.out
-        assert "2배 보정" in captured.out
+        assert "시간 기반 부족분 계산" in captured.out
+    
+    def test_weekday_with_existing_coupons(self, b_calculator, capsys):
+        """평일 계산 - 이미 적용된 쿠폰이 있는 경우 테스트"""
+        my_history = {
+            "유료 30분할인 (판매 : 300 )": 2  # 이미 2개 (1시간) 적용됨
+        }
+        total_history = {}
+        available_coupons = {
+            "무료 1시간할인": 999,
+            "유료 30분할인 (판매 : 300 )": 50
+        }
+        
+        applications = b_calculator.calculate_required_coupons(
+            my_history=my_history,
+            total_history=total_history,
+            available_coupons=available_coupons,
+            is_weekday=True
+        )
+        
+        # @/rules 계산: 평일 3시간 - (기존 1시간 + 무료 1시간) = 1시간 부족
+        # 1시간 = 2개 30분 쿠폰
+        free_app = next((app for app in applications if "무료" in app.coupon_name), None)
+        paid_app = next((app for app in applications if "30분" in app.coupon_name), None)
+        
+        assert free_app is not None
+        assert free_app.count == 1  # 무료 1시간
+        
+        assert paid_app is not None
+        assert paid_app.count == 2  # 부족한 1시간 = 2개 30분 쿠폰
+        
+        # 콘솔 출력 확인
+        captured = capsys.readouterr()
+        assert "현재상태" in captured.out
+        assert "부족" in captured.out
     
     def test_weekend_calculation_with_30min_doubling(self, b_calculator, capsys):
-        """주말 계산 - 30분 쿠폰 2배 보정 테스트"""
+        """주말 계산 - @/rules 지침에 따른 시간 기반 부족분 계산 테스트"""
         my_history = {}
         total_history = {}
         available_coupons = {
@@ -180,11 +211,16 @@ class TestBDiscountCalculator:
             is_weekday=False
         )
         
-        # 주말에는 WEEKEND 쿠폰이 없으므로 PAID 쿠폰 사용
-        # 목표 2시간에서 무료 1시간 제외하면 1시간 = 2개 30분 쿠폰 → 2배 보정으로 4개
+        # @/rules 지침: 주말 2시간 = 무료 1시간 + 유료 1시간  
+        # B 매장: 유료 1시간 = 2개 30분 쿠폰
+        free_app = next((app for app in applications if "무료" in app.coupon_name), None)
         paid_app = next((app for app in applications if "30분" in app.coupon_name), None)
+        
+        assert free_app is not None  
+        assert free_app.count == 1  # 무료 1시간
+        
         if paid_app:  # 주말 정책에 따라 달라질 수 있음
-            assert paid_app.count <= 50  # 보유 쿠폰 한도 내
+            assert paid_app.count == 2  # 유료 1시간 = 2개 30분 쿠폰
     
     def test_insufficient_coupons_adjustment(self, b_calculator):
         """보유 쿠폰 부족 시 조정 테스트"""
@@ -227,10 +263,48 @@ class TestBDiscountCalculator:
         free_app = next((app for app in applications if "무료" in app.coupon_name), None)
         assert free_app is None or free_app.count == 0
         
-        # 30분 쿠폰은 전체 3시간을 충족하기 위해 더 많이 적용됨
+        # @/rules 계산: 평일 3시간 - (기존 0시간 + 무료 0시간) = 3시간 부족
+        # 3시간 = 6개 30분 쿠폰
         paid_app = next((app for app in applications if "30분" in app.coupon_name), None)
         assert paid_app is not None
-        assert paid_app.count >= 4  # 2배 보정 적용
+        assert paid_app.count == 6  # 3시간을 30분 쿠폰으로 충족
+    
+    def test_weekday_with_all_existing_coupons(self, b_calculator, capsys):
+        """평일 계산 - 무료 + 유료 쿠폰이 모두 이미 적용된 경우 테스트 (사용자 시나리오)"""
+        my_history = {
+            "무료 1시간할인": 1,           # 이미 무료 1시간 적용됨
+            "유료 30분할인 (판매 : 300 )": 2  # 이미 유료 2개 (1시간) 적용됨
+        }
+        total_history = {}
+        available_coupons = {
+            "무료 1시간할인": 999,
+            "유료 30분할인 (판매 : 300 )": 50
+        }
+        
+        applications = b_calculator.calculate_required_coupons(
+            my_history=my_history,
+            total_history=total_history,
+            available_coupons=available_coupons,
+            is_weekday=True
+        )
+        
+        # @/rules 계산: 평일 3시간 - (기존무료 1시간 + 기존유료 1시간 + 추가무료 0시간) = 1시간 부족
+        # 1시간 = 2개 30분 쿠폰만 추가 적용되어야 함
+        free_app = next((app for app in applications if "무료" in app.coupon_name), None)
+        paid_app = next((app for app in applications if "30분" in app.coupon_name), None)
+        
+        # 무료 쿠폰은 이미 1개 적용되어 있으므로 추가 적용 안됨
+        assert free_app is None or free_app.count == 0
+        
+        # 유료 쿠폰은 부족한 1시간만 적용 (2개 30분 쿠폰)
+        assert paid_app is not None
+        assert paid_app.count == 2  # 부족한 1시간 = 2개 30분 쿠폰 (4개 아님!)
+        
+        # 콘솔 출력 확인
+        captured = capsys.readouterr()
+        assert "기존무료 1.0시간" in captured.out
+        assert "기존유료 1.0시간" in captured.out
+        assert "부족 1.0시간" in captured.out
 
 
 class TestBStoreCrawler:

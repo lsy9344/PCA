@@ -4,6 +4,7 @@
 import logging
 import logging.handlers
 import json
+import os
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -20,30 +21,36 @@ class StructuredLogger:
         for handler in self.logger.handlers[:]:
             self.logger.removeHandler(handler)
         
-        # 파일 핸들러 설정
-        log_dir = Path(log_config['log_dir'])
-        log_dir.mkdir(exist_ok=True)
+        # AWS Lambda 환경 감지
+        is_lambda = bool(os.environ.get('AWS_LAMBDA_FUNCTION_NAME'))
         
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_dir / f"{name}.log",
-            maxBytes=log_config['max_file_size'],
-            backupCount=log_config['backup_count'],
-            encoding='utf-8'
-        )
-        
-        # 콘솔 핸들러 설정
+        # 콘솔 핸들러 설정 (Lambda에서는 CloudWatch로 자동 전송)
         console_handler = logging.StreamHandler()
         
         # 포매터 설정
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        if is_lambda:
+            # Lambda 환경: 간단한 포맷 (CloudWatch에서 타임스탬프 자동 추가)
+            formatter = logging.Formatter('%(levelname)s - %(message)s')
+        else:
+            # 로컬 환경: 상세 포맷
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         
-        file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
-        
-        self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
+        
+        # 파일 핸들러는 로컬 환경에서만 추가
+        if not is_lambda and log_config.get('log_dir'):
+            log_dir = Path(log_config['log_dir'])
+            log_dir.mkdir(exist_ok=True)
+            
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_dir / f"{name}.log",
+                maxBytes=log_config.get('max_file_size', 10485760),  # 10MB 기본값
+                backupCount=log_config.get('backup_count', 5),
+                encoding='utf-8'
+            )
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
     
     def _format_message(self, message: str, extra: Optional[Dict[str, Any]] = None) -> str:
         """메시지 포맷팅"""

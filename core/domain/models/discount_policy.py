@@ -68,103 +68,92 @@ class DiscountCalculator:
                                  available_coupons: Dict[str, int],
                                  is_weekday: bool) -> List[CouponApplication]:
         """
-        4_discount_logic.mdc 규칙에 따른 쿠폰 계산 (시간 기반)
-        - 평일: 총 3시간 목표
-        - 주말: 총 2시간 목표
-        - 현재 적용된 시간을 계산하여 부족한 시간만 채움
+        @/rules 지침에 따른 쿠폰 계산
+        - 이미 적용된 쿠폰을 고려하여 부족한 만큼만 추가 적용
+        - 평일: 총 3시간 = 무료 1시간 + 유료 2시간
+        - 주말: 총 2시간 = 무료 1시간 + 주말/유료 1시간
         """
         applications = []
         period_type = "평일" if is_weekday else "주말"
         
         print(f"\n{'='*60}")
-        print(f"[DiscountCalculator] 쿠폰 계산 시작 - {period_type}")
+        print(f"[@/rules 기준] {period_type} 쿠폰 계산 - 시간 기반 부족분 계산")
         print(f"{'='*60}")
-        print(f"[입력데이터] 매장 쿠폰 사용이력: {my_history}")
-        print(f"[입력데이터] 전체 무료쿠폰 이력: {total_history}")
-        print(f"[입력데이터] 보유 쿠폰 현황: {available_coupons}")
         
-        # 현재 적용된 총 시간 계산 (분 단위) - 룰파일 4.2/4.3
-        current_minutes = 0
-        current_detail = []
+        # @/rules 지침에 따른 목표 시간 설정
+        if is_weekday:
+            target_hours = 3  # 평일 3시간
+        else:
+            target_hours = 2  # 주말 2시간
+        
+        print(f"[규칙] {period_type} 목표: 총 {target_hours}시간")
+        
+        # 현재 적용된 시간 계산 (시간 단위)
+        current_free_hours = 0
+        current_paid_hours = 0
+        current_weekend_hours = 0
+        
         for rule in self.coupon_rules:
-            used_count = my_history.get(rule.coupon_name, 0)
+            used_count = my_history.get(rule.coupon_key, 0)
             if used_count > 0:
-                rule_minutes = used_count * rule.duration_minutes
-                current_minutes += rule_minutes
-                current_detail.append(f"{rule.coupon_name}({used_count}개×{rule.duration_minutes}분={rule_minutes}분)")
+                used_hours = used_count * (rule.duration_minutes / 60.0)
+                if rule.coupon_type == CouponType.FREE:
+                    current_free_hours += used_hours
+                elif rule.coupon_type == CouponType.PAID:
+                    current_paid_hours += used_hours
+                elif rule.coupon_type == CouponType.WEEKEND:
+                    current_weekend_hours += used_hours
+                print(f"[현재상태] {rule.coupon_key}: {used_count}개 = {used_hours:.1f}시간")
         
-        current_hours = current_minutes / 60.0
-        target_hours = self.policy.get_target_hours(is_weekday)
-        remaining_hours = max(0, target_hours - current_hours)
-        
-        print(f"\n[시간계산] 현재 적용된 시간: {current_hours:.1f}시간 ({current_minutes}분)")
-        if current_detail:
-            print(f"[시간계산] 적용된 쿠폰 상세: {', '.join(current_detail)}")
-        print(f"[시간계산] {period_type} 목표 시간: {target_hours:.1f}시간")
-        print(f"[시간계산] 추가 필요 시간: {remaining_hours:.1f}시간 ({remaining_hours * 60:.0f}분)")
-        
-        if remaining_hours <= 0:
-            print(f"\n✅ [결과] 이미 목표 시간({target_hours:.1f}시간)을 충족함. 적용할 쿠폰 없음.")
-            return applications
-        
-        remaining_minutes = remaining_hours * 60
+        total_current_hours = current_free_hours + current_paid_hours + current_weekend_hours
+        print(f"[현재상태] 무료: {current_free_hours:.1f}시간, 유료: {current_paid_hours:.1f}시간, 주말: {current_weekend_hours:.1f}시간")
+        print(f"[현재상태] 총 적용된 시간: {total_current_hours:.1f}시간")
         
         print(f"\n{'-'*50}")
         print(f"1단계: 무료 쿠폰 계산 (룰파일 4.4)")
         print(f"{'-'*50}")
         
-        # 1. 무료 쿠폰 계산 (룰파일 4.4)
+        # 1. 무료 쿠폰 계산 (@/rules 로직)
         free_rules = [rule for rule in self.coupon_rules if rule.coupon_type == CouponType.FREE]
-        
-        if not free_rules:
-            print(f"[무료쿠폰] 무료 쿠폰 규칙이 없습니다.")
+        free_apply_hours = 0
         
         for rule in free_rules:
-            print(f"\n[무료쿠폰] 검토 중: {rule.coupon_name}")
+            # @/rules: free_apply = 0 if total_free_used > 0 else max(0, 1 - my_free)
+            total_free_used = total_history.get(rule.coupon_key, 0)
+            my_free_used_count = my_history.get(rule.coupon_key, 0)
+            my_free_used_hours = my_free_used_count * (rule.duration_minutes / 60.0)
             
-            # 무료 쿠폰 원칙: my_history 또는 total_history 중 어느 하나라도 사용되었다면 적용하지 않음
-            my_used = my_history.get(rule.coupon_name, 0)
-            total_used = total_history.get(rule.coupon_name, 0)
-            
-            print(f"[무료쿠폰] 현재 매장 사용: {my_used}개")
-            print(f"[무료쿠폰] 전체 매장 사용: {total_used}개")
-            
-            if my_used > 0:
-                print(f"[무료쿠폰] ❌ 현재 매장에서 이미 {my_used}개 사용됨. 스킵.")
-                continue
-                
-            if total_used > 0:
-                print(f"[무료쿠폰] ❌ 전체 매장에서 이미 {total_used}개 사용됨. 스킵.")
-                continue
-            
-            # 무료 쿠폰이 한 번도 사용되지 않았다면 1개 적용
-            available = available_coupons.get(rule.coupon_name, 0)
-            print(f"[무료쿠폰] 보유 쿠폰: {available}개")
-            print(f"[무료쿠폰] 무료 쿠폰 미사용 확인됨. 1개 적용 예정.")
-            
-            # 실제 적용 가능한 개수
-            apply_count = min(1, available) if available > 0 else 0
-            
-            if apply_count > 0:
-                applications.append(CouponApplication(
-                    coupon_name=rule.coupon_name,
-                    coupon_type=rule.coupon_type,
-                    count=apply_count
-                ))
-                # 적용할 시간에서 차감
-                apply_minutes = apply_count * rule.duration_minutes
-                remaining_minutes -= apply_minutes
-                
-                print(f">>>>> 적용할 쿠폰: {rule.coupon_name} {apply_count}개 ({apply_minutes}분)")
-                print(f"[무료쿠폰] ✅ 적용 후 남은 필요 시간: {remaining_minutes:.0f}분")
+            if total_free_used > 0:
+                print(f"[무료쿠폰] {rule.coupon_key} 전체 이력에서 이미 사용됨. 스킵.")
+                free_apply_count = 0
             else:
-                print(f"[무료쿠폰] ❌ 보유 쿠폰 부족 (필요: 1개, 보유: {available}개)")
+                # 1시간 기준으로 계산: max(0, 1 - my_free_hours)
+                free_need_hours = max(0, 1.0 - my_free_used_hours)
+                free_apply_count = int(free_need_hours / (rule.duration_minutes / 60.0)) if free_need_hours > 0 else 0
+                
+                if free_apply_count > 0:
+                    available = available_coupons.get(rule.coupon_name, 0)
+                    free_apply_count = min(free_apply_count, available)
+                    
+                    if free_apply_count > 0:
+                        free_apply_hours = free_apply_count * (rule.duration_minutes / 60.0)
+                        print(f"[무료쿠폰] {rule.coupon_key} {free_apply_count}개 적용 예정 ({free_apply_hours:.1f}시간)")
+                        
+                        applications.append(CouponApplication(
+                            coupon_name=rule.coupon_name,
+                            coupon_type=rule.coupon_type,
+                            count=free_apply_count
+                        ))
+                    else:
+                        print(f"[무료쿠폰] {rule.coupon_key} 보유 쿠폰 부족")
+                else:
+                    print(f"[무료쿠폰] {rule.coupon_key} 이미 충분히 사용됨")
         
         print(f"\n{'-'*50}")
         print(f"2단계: {period_type} 쿠폰 계산 (룰파일 4.2/4.3)")
         print(f"{'-'*50}")
         
-        # 2. 유료/주말 쿠폰 계산 - fallback 로직 추가
+        # 2. 유료/주말 쿠폰 계산 (@/rules 로직)
         if is_weekday:
             target_coupon_types = [CouponType.PAID]
         else:
@@ -180,70 +169,59 @@ class DiscountCalculator:
         for target_type in target_coupon_types:
             target_rules = [rule for rule in self.coupon_rules if rule.coupon_type == target_type]
             
-            if not target_rules:
-                print(f"[{target_type.value}쿠폰] {target_type.value} 쿠폰 규칙이 없습니다.")
-                continue
-            
             for rule in target_rules:
-                print(f"\n[{target_type.value}쿠폰] 검토 중: {rule.coupon_name} ({rule.duration_minutes}분)")
-                
-                # 쿠폰별 목표 개수 기반 계산 (룰파일 4.2-4.3)
-                if target_type == CouponType.PAID and not is_weekday:
-                    # 주말에 PAID 쿠폰을 사용하는 경우, 주말 목표 개수 사용
-                    target_count = self.policy.weekend_coupon_target_count
-                    print(f"[{target_type.value}쿠폰] 주말 PAID 쿠폰 사용: 목표 {target_count}개")
+                # @/rules: paid_apply = total_needed - (my_paid + free_apply)
+                if is_weekday:
+                    # 평일: paid_apply = 3 - (current_free_hours + current_paid_hours + free_apply_hours)
+                    paid_need_hours = target_hours - (current_free_hours + current_paid_hours + free_apply_hours)
                 else:
-                    target_count = self.policy.get_coupon_target_count(rule.coupon_type, is_weekday)
+                    # 주말: weekend_apply = 2 - (current_free_hours + current_weekend_hours + free_apply_hours)
+                    if target_type == CouponType.WEEKEND:
+                        paid_need_hours = target_hours - (current_free_hours + current_weekend_hours + free_apply_hours)
+                    else:
+                        # WEEKEND가 없어서 PAID 사용하는 경우
+                        paid_need_hours = target_hours - (current_free_hours + current_paid_hours + free_apply_hours)
                 
-                my_used = my_history.get(rule.coupon_name, 0)
-                additional_needed = max(0, target_count - my_used)
+                if paid_need_hours <= 0:
+                    print(f"[{target_type.value}쿠폰] {rule.coupon_key} 이미 충분히 적용됨. 스킵.")
+                    continue
+                
+                # 필요한 개수 계산
+                paid_apply_count = int((paid_need_hours * 60) / rule.duration_minutes + 0.99)  # 올림
                 available = available_coupons.get(rule.coupon_name, 0)
+                paid_apply_count = min(paid_apply_count, available)
                 
-                print(f"[{target_type.value}쿠폰] 쿠폰별 목표: {target_count}개 ({target_count * rule.duration_minutes}분)")
-                print(f"[{target_type.value}쿠폰] 현재 매장 사용: {my_used}개 ({my_used * rule.duration_minutes}분)")
-                print(f"[{target_type.value}쿠폰] 추가 필요: {additional_needed}개 ({additional_needed * rule.duration_minutes}분)")
-                print(f"[{target_type.value}쿠폰] 보유 쿠폰: {available}개")
-                
-                # 실제 적용 가능한 개수
-                apply_count = min(additional_needed, available) if additional_needed > 0 else 0
-                
-                if apply_count > 0:
+                if paid_apply_count > 0:
+                    paid_apply_hours = paid_apply_count * (rule.duration_minutes / 60.0)
+                    print(f"[{target_type.value}쿠폰] {rule.coupon_key} {paid_apply_count}개 적용 예정 ({paid_apply_hours:.1f}시간)")
+                    print(f"[{target_type.value}쿠폰] 계산: 목표 {target_hours}시간 - 기존무료 {current_free_hours:.1f}시간 - 기존유료 {current_paid_hours if target_type == CouponType.PAID else current_weekend_hours:.1f}시간 = 부족 {paid_need_hours:.1f}시간")
+                    
                     applications.append(CouponApplication(
                         coupon_name=rule.coupon_name,
                         coupon_type=rule.coupon_type,
-                        count=apply_count
+                        count=paid_apply_count
                     ))
-                    # 적용할 시간에서 차감 (remaining_minutes 업데이트용)
-                    apply_minutes = apply_count * rule.duration_minutes
-                    remaining_minutes -= apply_minutes
-                    
-                    print(f">>>>> 적용할 쿠폰: {rule.coupon_name} {apply_count}개 ({apply_minutes}분)")
-                    print(f"[{target_type.value}쿠폰] ✅ 목표 달성: {my_used + apply_count}/{target_count}개")
                 else:
-                    if additional_needed <= 0:
-                        print(f"[{target_type.value}쿠폰] ✅ 이미 목표 달성: {my_used}/{target_count}개")
-                    else:
-                        print(f"[{target_type.value}쿠폰] ❌ 보유 쿠폰 부족 (필요: {additional_needed}개, 보유: {available}개)")
+                    print(f"[{target_type.value}쿠폰] {rule.coupon_key} 보유 쿠폰 부족: 필요 {paid_apply_count}개, 보유 {available}개")
         
         print(f"\n{'='*60}")
         print(f"[최종결과] 적용할 쿠폰 총 {len(applications)}개")
         print(f"{'='*60}")
         
-        total_apply_minutes = 0
+        total_apply_hours = 0
         for app in applications:
             # 해당 쿠폰의 duration_minutes 찾기
             rule_duration = next((rule.duration_minutes for rule in self.coupon_rules 
                                 if rule.coupon_name == app.coupon_name), 0)
-            apply_minutes = app.count * rule_duration
-            total_apply_minutes += apply_minutes
+            apply_hours = app.count * (rule_duration / 60.0)
+            total_apply_hours += apply_hours
             
-            print(f">>>>> 최종 적용할 쿠폰: {app.coupon_name} {app.count}개 ({apply_minutes}분)")
+            print(f">>>>> 최종 적용할 쿠폰: {app.coupon_name} {app.count}개 ({apply_hours:.1f}시간)")
         
-        total_apply_hours = total_apply_minutes / 60.0
-        final_total_hours = current_hours + total_apply_hours
+        final_total_hours = total_current_hours + total_apply_hours
         
-        print(f"\n[최종확인] 적용 전 시간: {current_hours:.1f}시간")
-        print(f"[최종확인] 적용할 시간: {total_apply_hours:.1f}시간 ({total_apply_minutes}분)")
+        print(f"\n[최종확인] 현재 적용된 시간: {total_current_hours:.1f}시간")
+        print(f"[최종확인] 추가 적용할 시간: {total_apply_hours:.1f}시간")
         print(f"[최종확인] 적용 후 총시간: {final_total_hours:.1f}시간")
         print(f"[최종확인] {period_type} 목표달성: {'✅ 달성' if final_total_hours >= target_hours else '❌ 미달성'}")
         print(f"{'='*60}\n")

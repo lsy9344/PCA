@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "request_id": "B_0280_1751271809",
+  "store_id": "B",
+  "vehicle_number": "0280",
+  "applied_coupons": [
+    {
+      "유료 30분할인 (판매 : 300 )": 2
+    }
+  ],
+  "completed_at": "2025-06-30T17:24:10.570984",
+  "error_message": null
+}
