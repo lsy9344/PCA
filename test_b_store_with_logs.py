@@ -5,7 +5,6 @@ B 매장 자동화 테스트 - 로그를 실시간으로 볼 수 있도록 실�
 import asyncio
 import sys
 from pathlib import Path
-from datetime import datetime
 
 # 프로젝트 루트를 Python 경로에 추가
 project_root = Path(__file__).parent
@@ -47,24 +46,6 @@ async def main():
                 print(f"📊 총 적용 쿠폰: {total_count}개")
             else:
                 print("ℹ️ 적용할 쿠폰이 없었습니다.")
-                
-            # 성공 결과를 JSON 파일로 저장
-            import json
-            result_data = {
-                "success": response.success,
-                "request_id": response.request_id,
-                "store_id": response.store_id,
-                "vehicle_number": response.vehicle_number,
-                "applied_coupons": response.applied_coupons,
-                "completed_at": response.completed_at.isoformat() if response.completed_at else None,
-                "error_message": response.error_message
-            }
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            result_file = f"b_store_result_{timestamp}.json"
-            with open(result_file, 'w', encoding='utf-8') as f:
-                json.dump(result_data, f, ensure_ascii=False, indent=2)
-            print(f"📄 결과 저장: {result_file}")
             
         else:
             print(f"❌ 자동화 실패: {response.error_message}")

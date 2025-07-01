@@ -17,12 +17,13 @@ from core.domain.models.coupon import CouponHistory, CouponApplication
 class BStoreCrawler(StoreRepository):
     """B 매장 전용 크롤러 - 실제 테스트 검증된 버전"""
     
-    def __init__(self, store_config, playwright_config, logger):
+    def __init__(self, store_config, playwright_config, logger, notification_service=None):
         self.config = store_config
         self.playwright_config = playwright_config
         self.store_id = "B"
         self.user_id = store_config.login_username  # "215"
         self.logger = logger
+        self.notification_service = notification_service
         
         # 브라우저 관련 속성
         self.playwright = None
@@ -111,6 +112,25 @@ class BStoreCrawler(StoreRepository):
         except Exception as e:
             self.logger.error(f"[실패] 알림 처리 중 오류: {str(e)}")
     
+    async def _send_low_coupon_notification(self, coupon_count: int, remaining_amount: int):
+        """쿠폰 부족 텔레그램 알림"""
+        try:
+            if self.notification_service:
+                message = f"💰 B 매장 쿠폰 충전 필요 알림\n\n"
+                message += f"📊 현재 쿠폰: {coupon_count}개\n"
+                message += f"💵 남은 금액: {remaining_amount:,}원\n"
+                
+                await self.notification_service.send_success_notification(
+                    message=message,
+                    store_id=self.store_id
+                )
+                self.logger.info("[성공] 쿠폰 부족 텔레그램 알림 전송 완료")
+            else:
+                self.logger.warning("[경고] 텔레그램 알림 서비스가 설정되지 않음")
+                
+        except Exception as e:
+            self.logger.error(f"[실패] 쿠폰 부족 알림 전송 중 오류: {str(e)}")
+    
     async def search_vehicle(self, vehicle: Vehicle) -> bool:
         """차량 검색"""
         try:
@@ -193,7 +213,6 @@ class BStoreCrawler(StoreRepository):
             
             # B 매장 특수 사항: 무료 쿠폰은 항상 보유되어 있음
             discount_info['무료 1시간할인'] = {'car': 999, 'total': 999}
-            self.logger.info("[성공] B 매장 무료 쿠폰은 항상 보유: 999개")
             
             # 현재 페이지에서 남은잔여량 확인
             remaining_amount_text = await self._check_remaining_amount_on_current_page(self.page)
@@ -271,6 +290,12 @@ class BStoreCrawler(StoreRepository):
                 paid_coupon_name = "유료 30분할인 (판매 : 300 )"
                 discount_info[paid_coupon_name] = {'car': paid_30min_count, 'total': paid_30min_count}
                 self.logger.info(f"[성공] 유료 30분할인: {paid_30min_count}개")
+                
+                # 쿠폰이 50개 이하인 경우 텔레그램 알림
+                if paid_30min_count <= 50:
+                    self.logger.warning(f"[경고] B 매장 유료 30분할인 쿠폰 부족: {paid_30min_count}개")
+                    asyncio.create_task(self._send_low_coupon_notification(paid_30min_count, amount))
+                    
             else:
                 self.logger.warning(f"[경고] 남은잔여량 숫자 추출 실패: {amount_text}")
         except Exception as e:
@@ -479,15 +504,11 @@ class BStoreCrawler(StoreRepository):
             
             self.logger.info(f"[쿠폰] B 매장 쿠폰 적용 시작: {coupons_to_apply}")
             
-            # 디버그: 쿠폰 키 확인
-            self.logger.info(f"[디버그] 전달받은 쿠폰 키들: {list(coupons_to_apply.keys())}")
-            
             total_applied = 0
             
             # 각 쿠폰 적용 처리 (모든 쿠폰에 대해 동적으로 처리)
             for coupon_name, count in coupons_to_apply.items():
-                self.logger.info(f"[디버그] 쿠폰 '{coupon_name}' 적용 시작: {count}개")
-                
+
                 if count > 0:
                     # 쿠폰 이름에 따른 타입 결정
                     if '무료' in coupon_name and '1시간' in coupon_name:
@@ -510,9 +531,8 @@ class BStoreCrawler(StoreRepository):
                             self.logger.error(f"[실패] {coupon_display_name} {i + 1}개 적용 실패")
                             return False
             
-            self.logger.info(f"[디버그] 최종 total_applied 값: {total_applied}")
             if total_applied > 0:
-                self.logger.info(f"[완료] B 매장 쿠폰 적용 완료: 총 {total_applied}개")
+                self.logger.info(f"[완료] B 쿠폰 적용 완료: 총 {total_applied}개")
                 return True
             else:
                 self.logger.info("[정보] 적용할 쿠폰이 없음")
@@ -529,14 +549,12 @@ class BStoreCrawler(StoreRepository):
             
             # 현재 할인내역 테이블의 행 수를 기록 (적용 전)
             current_rows = await self._count_discount_rows(page)
-            self.logger.info(f"[분석] 적용 전 할인내역 행 수: {current_rows}")
             
             # 쿠폰 타입에 따른 링크 클릭 (a 태그만 선택)
             if coupon_type == 'FREE_1HOUR':
                 # 무료 1시간할인 링크 클릭 (a 태그만)
                 discount_link = page.locator('a:has-text("무료 1시간할인")')
                 link_count = await discount_link.count()
-                self.logger.info(f"[디버그] 무료 1시간할인 링크 수: {link_count}")
                 
                 if link_count > 0:
                     await discount_link.first.click()
@@ -549,7 +567,6 @@ class BStoreCrawler(StoreRepository):
                 # 유료 30분할인 링크 클릭 (a 태그만)
                 discount_link = page.locator('a:has-text("유료 30분할인")')
                 link_count = await discount_link.count()
-                self.logger.info(f"[디버그] 유료 30분할인 링크 수: {link_count}")
                 
                 if link_count > 0:
                     await discount_link.first.click()

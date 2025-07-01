@@ -1,4 +1,0 @@
-2025-06-30 15:35:03,795 - INFO - [B] 쿠폰 자동화 시작 - 차량번호: 0280, 매장: B
-2025-06-30 15:35:03,796 - ERROR - [MCP] B 매장 로그인 중 오류: 'NoneType' object has no attribute 'mcp_playwright_browser_resize'
-2025-06-30 15:35:03,797 - ERROR - [B] 자동화 실패: 로그인 실패 | {"store_id": "B", "vehicle": "0280", "step": "로그인", "stack_trace": "Traceback (most recent call last):\n  File \"c:\\Code\\Project\\parking_cupon_auto\\PCA_250628\\core\\application\\use_cases\\apply_coupon_use_case.py\", line 48, in execute\n    raise Exception(\"로그인 실패\")\nException: 로그인 실패\n"}
-2025-06-30 15:35:04,812 - INFO - 텔레그램 알림 전송 성공

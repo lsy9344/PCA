@@ -89,12 +89,7 @@ class ApplyCouponUseCase:
             # 8. 쿠폰 적용 (적용할 쿠폰이 있는 경우에만 로그)
             actually_applied_coupons = []
             if applications:
-                # 적용할 쿠폰 요약 로그 (간소화)
-                self._logger.info(f"[{request.store_id}] >>>>>[적용할 쿠폰]")
-                for application in applications:
-                    if application.count > 0:
-                        self._logger.info(f"[{request.store_id}] {application.coupon_name}: {application.count}개")
-                
+
                 # 쿠폰 적용 실행
                 apply_result = await store_instance.apply_coupons(applications)
                 

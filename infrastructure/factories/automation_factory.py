@@ -44,11 +44,12 @@ class AutomationFactory:
         store_config = self.config_manager.get_store_config(store_id)
         playwright_config = self.config_manager.get_playwright_config()
         logger = self.create_logger(f"store_{store_id.lower()}")
+        notification_service = self.create_notification_service()
         
         if store_id.upper() == "A":
             return AStoreCrawler(store_config, playwright_config, logger)
         elif store_id.upper() == "B":
-            return BStoreCrawler(store_config, playwright_config, logger)
+            return BStoreCrawler(store_config, playwright_config, logger, notification_service)
         else:
             raise StoreNotSupportedException(f"지원하지 않는 매장입니다: {store_id}")
     
