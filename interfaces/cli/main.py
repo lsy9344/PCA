@@ -35,7 +35,7 @@ async def main():
             vehicle_number=args.vehicle
         )
         
-        print(f"🚀 자동화 시작: {args.store}매장, 차량번호 {args.vehicle}")
+        print(f"[시작] 자동화 시작: {args.store}매장, 차량번호 {args.vehicle}")
         
         # 유스케이스 실행
         use_case = factory.create_apply_coupon_use_case(request.store_id)
@@ -43,18 +43,18 @@ async def main():
         
         # 결과 출력
         if response.success:
-            print("✅ 자동화 성공!")
+            print("[성공] 자동화 성공!")
             print(f"📋 요청 ID: {response.request_id}")
             if response.applied_coupons:
-                print("🎫 적용된 쿠폰:")
+                print("[쿠폰] 적용된 쿠폰:")
                 for coupon_info in response.applied_coupons:
                     for name, count in coupon_info.items():
                         print(f"   - {name}: {count}개")
             else:
-                print("ℹ️  적용할 쿠폰이 없었습니다.")
+                print("[정보]  적용할 쿠폰이 없었습니다.")
         else:
-            print("❌ 자동화 실패!")
-            print(f"🚨 오류: {response.error_message}")
+            print("[실패] 자동화 실패!")
+            print(f"[알림] 오류: {response.error_message}")
             sys.exit(1)
             
     except KeyboardInterrupt:

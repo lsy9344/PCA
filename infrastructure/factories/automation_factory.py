@@ -11,6 +11,8 @@ from infrastructure.logging.structured_logger import StructuredLogger
 from infrastructure.notifications.notification_service import NotificationService
 from infrastructure.notifications.telegram_adapter import TelegramAdapter
 from infrastructure.web_automation.store_crawlers.a_store_crawler import AStoreCrawler
+from infrastructure.web_automation.store_crawlers.b_store_crawler import BStoreCrawler
+from core.domain.models.b_discount_calculator import BDiscountCalculator
 from shared.exceptions.automation_exceptions import StoreNotSupportedException
 
 
@@ -42,12 +44,12 @@ class AutomationFactory:
         store_config = self.config_manager.get_store_config(store_id)
         playwright_config = self.config_manager.get_playwright_config()
         logger = self.create_logger(f"store_{store_id.lower()}")
+        notification_service = self.create_notification_service()
         
         if store_id.upper() == "A":
             return AStoreCrawler(store_config, playwright_config, logger)
         elif store_id.upper() == "B":
-            # B매장 크롤러는 아직 구현되지 않음
-            raise StoreNotSupportedException(f"B매장 크롤러는 아직 구현되지 않았습니다")
+            return BStoreCrawler(store_config, playwright_config, logger, notification_service)
         else:
             raise StoreNotSupportedException(f"지원하지 않는 매장입니다: {store_id}")
     
@@ -56,7 +58,12 @@ class AutomationFactory:
         discount_policy = self.config_manager.get_discount_policy(store_id)
         coupon_rules = self.config_manager.get_coupon_rules(store_id)
         
-        return DiscountCalculator(discount_policy, coupon_rules)
+        if store_id.upper() == "B":
+            # B 매장은 30분 쿠폰 2배 보정 규칙 적용
+            return BDiscountCalculator(discount_policy, coupon_rules)
+        else:
+            # A 매장 및 기타 매장은 기본 계산기 사용
+            return DiscountCalculator(discount_policy, coupon_rules)
     
     def create_apply_coupon_use_case(self, store_id: str) -> ApplyCouponUseCase:
         """쿠폰 적용 유스케이스 생성"""

@@ -5,9 +5,9 @@ import json
 import asyncio
 from typing import Dict, Any
 
-from ...core.application.dto.automation_dto import AutomationRequest
-from ...infrastructure.config.config_manager import ConfigManager
-from ...infrastructure.factories.automation_factory import AutomationFactory
+from core.application.dto.automation_dto import AutomationRequest
+from infrastructure.config.config_manager import ConfigManager
+from infrastructure.factories.automation_factory import AutomationFactory
 
 
 # 전역 팩토리 (Lambda 컨테이너 재사용을 위해)

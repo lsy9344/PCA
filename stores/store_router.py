@@ -4,10 +4,8 @@
 from typing import Type
 from .base_store import BaseStore
 from .a_store import AStore
-from ..reference.b_store import BStore
-
 # 매장 클래스 임포트
-# from .b_store import BStore
+from core.domain.stores.b_store import BStore
 
 # 매장 ID와 클래스 매핑
 STORE_CLASSES = {
