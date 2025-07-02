@@ -1,5 +1,5 @@
 """
-B 매장 크롤러 - 실제 테스트 검증된 버전
+B 매장 크롤러 - BaseCrawler 상속 버전
 - 할인등록현황 테이블에서 등록자 필드로 우리 매장 vs 전체 할인 내역 구분
 - 남은잔여량에서 보유 쿠폰 수량 계산 (금액 ÷ 300)
 """
@@ -9,39 +9,19 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from playwright.async_api import Page, Browser, Playwright, async_playwright
 
-from core.domain.repositories.store_repository import StoreRepository
+from infrastructure.web_automation.base_crawler import BaseCrawler
 from core.domain.models.vehicle import Vehicle
 from core.domain.models.coupon import CouponHistory, CouponApplication
 
 
-class BStoreCrawler(StoreRepository):
-    """B 매장 전용 크롤러 - 실제 테스트 검증된 버전"""
+class BStoreCrawler(BaseCrawler):
+    """B 매장 전용 크롤러 - BaseCrawler 상속 버전"""
     
     def __init__(self, store_config, playwright_config, logger, notification_service=None):
-        self.config = store_config
-        self.playwright_config = playwright_config
+        super().__init__(store_config, playwright_config, logger)
         self.store_id = "B"
         self.user_id = store_config.login_username  # "215"
-        self.logger = logger
         self.notification_service = notification_service
-        
-        # 브라우저 관련 속성
-        self.playwright = None
-        self.browser = None
-        self.page = None
-    
-    async def _initialize_browser(self) -> None:
-        """브라우저 초기화"""
-        if self.browser is None:
-            self.playwright = await async_playwright().start()
-            self.browser = await self.playwright.chromium.launch(
-                headless=self.playwright_config.get('headless', False),
-                slow_mo=1000 if not self.playwright_config.get('headless', False) else 0
-            )
-            self.page = await self.browser.new_page()
-            
-            # 기본 타임아웃 설정
-            self.page.set_default_timeout(self.playwright_config.get('timeout', 30000))
     
     async def login(self) -> bool:
         """B 매장 로그인 (실제 검증된 셀렉터 사용)"""
@@ -50,7 +30,7 @@ class BStoreCrawler(StoreRepository):
             await self._initialize_browser()
             
             # 로그인 페이지로 이동
-            await self.page.goto(self.config.website_url)
+            await self.page.goto(self.store_config.website_url)
             await self.page.wait_for_load_state('networkidle')
             
             # 로그인 요소 찾기 (실제 동작하는 방식)
@@ -59,8 +39,8 @@ class BStoreCrawler(StoreRepository):
             login_button = self.page.get_by_role('button', name='Submit')
             
             # 로그인 정보 입력
-            await username_input.fill(self.config.login_username)
-            await password_input.fill(self.config.login_password)
+            await username_input.fill(self.store_config.login_username)
+            await password_input.fill(self.store_config.login_password)
             await login_button.click()
             
             # 페이지 변화 대기
@@ -116,9 +96,9 @@ class BStoreCrawler(StoreRepository):
         """쿠폰 부족 텔레그램 알림"""
         try:
             if self.notification_service:
-                message = f"💰 B 매장 쿠폰 충전 필요 알림\n\n"
-                message += f"📊 현재 쿠폰: {coupon_count}개\n"
-                message += f"💵 남은 금액: {remaining_amount:,}원\n"
+                message = f"보유 쿠폰 충전 필요 알림\n\n"
+                message += f"현재 쿠폰: {coupon_count}개\n"
+                message += f"남은 금액: {remaining_amount:,}원\n"
                 
                 await self.notification_service.send_success_notification(
                     message=message,
@@ -305,7 +285,7 @@ class BStoreCrawler(StoreRepository):
         """보유 쿠폰 수량 조회 (남은잔여량 기반)"""
         try:
             # 할인등록 페이지로 이동 (남은잔여량 확인)
-            registration_url = self.config['store']['website_url'].replace('/login', '/discount/registration')
+            registration_url = self.store_config.website_url.replace('/login', '/discount/registration')
             await page.goto(registration_url)
             await page.wait_for_load_state('networkidle')
             
@@ -598,30 +578,51 @@ class BStoreCrawler(StoreRepository):
             return False
     
     async def _handle_apply_popups_without_navigation(self, page: Page) -> bool:
-        """쿠폰 적용 후 팝업 처리 - 페이지 이동 방지"""
+        """쿠폰 적용 후 팝업 처리 - 실제 HTML 구조에 맞춘 팝업 제목 '알림' 찾기"""
         try:
-            # 성공 메시지 팝업 확인 (최대 3초 대기)
-            success_messages = [
-                'text=할인처리 완료 되었습니다',
-                'text=등록되었습니다',
-                'text=적용되었습니다',
-                'text=할인이 등록되었습니다'
+            # 실제 HTML 구조에 맞춘 팝업창의 제목 '알림' 확인 (최대 3초 대기)
+            popup_title_selectors = [
+                'h3:has-text("알림")',           # <h3>알림</h3> 직접 찾기
+                '.modal-title h3:has-text("알림")',  # .modal-title 안의 h3 태그
+                '.modal-title:has-text("알림")',     # .modal-title 전체에서 알림 텍스트
+                'text=알림',                     # 단순 텍스트 매칭
+                ':text("알림")'                  # Playwright 텍스트 셀렉터
             ]
             
             popup_found = False
             for i in range(6):  # 3초간 0.5초 간격으로 확인
-                for message_locator in success_messages:
-                    message = page.locator(message_locator)
-                    if await message.count() > 0:
-                        self.logger.info("[성공] 쿠폰 적용 성공 메시지 확인")
+                for title_selector in popup_title_selectors:
+                    popup_title = page.locator(title_selector)
+                    if await popup_title.count() > 0:
+                        self.logger.info(f"[성공] 팝업 제목 '알림' 확인 (셀렉터: {title_selector})")
                         popup_found = True
                         
-                        # OK 버튼 클릭 - 현재 페이지 유지하도록 처리
-                        ok_button = page.locator('text=OK')
-                        if await ok_button.count() > 0:
-                            await ok_button.click()
-                            await page.wait_for_timeout(300)  # 짧은 대기
-                            self.logger.info("[액션] 성공 팝업 닫기 완료")
+                        # OK 버튼 클릭 - 실제 HTML 구조에 맞춘 다양한 방식으로 시도
+                        ok_button_selectors = [
+                            '.modal-buttons button:has-text("OK")',    # .modal-buttons 안의 OK 버튼
+                            '.modal-buttons input[value="OK"]',        # .modal-buttons 안의 OK input
+                            '.modal-buttons .btn:has-text("OK")',      # .modal-buttons 안의 .btn OK
+                            'text=OK',                                 # 단순 OK 텍스트
+                            'text="OK"',                               # 따옴표 포함 OK
+                            'button:has-text("OK")',                   # 모든 OK 버튼
+                            'input[value="OK"]',                       # 모든 OK input
+                            '.btn:has-text("OK")',                     # 모든 .btn OK
+                            '.button:has-text("OK")'                   # 모든 .button OK
+                        ]
+                        
+                        ok_clicked = False
+                        for ok_selector in ok_button_selectors:
+                            ok_button = page.locator(ok_selector)
+                            if await ok_button.count() > 0:
+                                await ok_button.click()
+                                await page.wait_for_timeout(300)  # 짧은 대기
+                                self.logger.info(f"[액션] 알림 팝업 OK 버튼 클릭 완료 (셀렉터: {ok_selector})")
+                                ok_clicked = True
+                                break
+                        
+                        if not ok_clicked:
+                            self.logger.warning("[경고] OK 버튼을 찾을 수 없음")
+                        
                         break
                 
                 if popup_found:
@@ -630,7 +631,7 @@ class BStoreCrawler(StoreRepository):
                 await page.wait_for_timeout(500)  # 0.5초 대기
             
             if not popup_found:
-                self.logger.warning("[경고] 성공 팝업을 찾지 못했지만 계속 진행")
+                self.logger.warning("[경고] 알림 팝업을 찾지 못했지만 계속 진행")
             
             return True
             
@@ -708,42 +709,6 @@ class BStoreCrawler(StoreRepository):
             
         except Exception as e:
             self.logger.warning(f"[경고] 쿠폰 적용 팝업 처리 중 오류 (무시하고 계속): {str(e)}")
-
-    async def cleanup(self) -> None:
-        """리소스 정리"""
-        try:
-            # 페이지 정리
-            if self.page:
-                try:
-                    await self.page.close()
-                    self.logger.info("페이지 정리 완료")
-                except Exception:
-                    pass
-                finally:
-                    self.page = None
-            
-            # 브라우저 정리
-            if self.browser:
-                try:
-                    await self.browser.close()
-                    self.logger.info("브라우저 정리 완료")
-                except Exception:
-                    pass
-                finally:
-                    self.browser = None
-            
-            # Playwright 정리
-            if self.playwright:
-                try:
-                    await self.playwright.stop()
-                    self.logger.info("Playwright 정리 완료")
-                except Exception:
-                    pass
-                finally:
-                    self.playwright = None
-                    
-        except Exception as e:
-            self.logger.warning(f"리소스 정리 중 오류: {str(e)}")
 
     async def _set_entry_date_for_test(self, page: Page):
         """테스트용: 입차일 설정 (나중에 삭제 예정)"""
